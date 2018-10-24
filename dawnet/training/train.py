@@ -1,5 +1,5 @@
 # Helper function during training
-# @author: John
+# @author: _john
 # =============================================================================
 import abc
 import glob

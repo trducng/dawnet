@@ -1,5 +1,5 @@
 # The review functions
-# @author: John Nguyen
+# @author: _john
 # ==============================================================================
 
 class AverageMeter(object):

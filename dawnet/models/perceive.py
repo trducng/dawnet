@@ -5,7 +5,7 @@ import time
 
 import torch.nn as nn
 
-from xnet.models.convs import DenseUnit
+from dawnet.models.convs import DenseUnit
 
 
 
