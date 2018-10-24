@@ -1,0 +1,12 @@
+# python compiled code
+*.pyc
+__pycache__
+
+# os and other tools
+.DS_Store
+.ipynb_checkpoints
+*.swp
+.vscode/
+.idea/**
+*.pbxproj
+*.xcworkspacedata
