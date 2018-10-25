@@ -43,8 +43,7 @@ def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
         dilation [int or tuple of 2 ints]: the dilation value of maxpool layer
     
     # Returns
-        [tuple of (top, bottom, left, right)]: the contributive region if `idx`
-            is not None
+        [tuple of (y, x)]: the contributive region if `idx` is not None
         [torch Tensor]: the reconstructed input map if `idx` is None
     """
     if isinstance(kernel_size, int):
@@ -52,20 +51,31 @@ def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
     
     if stride is None:
         stride = kernel_size
+    elif isinstance(stride, int):
+        stride = [stride, stride]
 
     if isinstance(indices, torch.Tensor):
         unmaxpool = nn.MaxUnpool2d(kernel_size, stride=stride, padding=padding)
-        return unmaxpool(output_map)
-    elif isinstance(indices, tuple) and len(indices) == 2:
+        return unmaxpool(output_map, indices)
+    elif (isinstance(indices, tuple) or isinstance(indices, list)
+          and len(indices) == 2):
         y, x = indices
         # @TODO: this is basically wrong as we have not take into account the
         # value of `slide` != `kernel_size`
+        # @TODO: this also incurs problem as it does not take into account
+        # `dilation` and `padding`
+        indices_result = []
+
         top = y * stride[0]
         bottom = top + kernel_size[0]
         left = x * stride[1]
         right = left + kernel_size[1]
-        return top, bottom, left, right
-    
+
+        for row in range(top, bottom):
+            for col in range(left, right):
+                indices_result.append((row, col))
+        return indices_result
+
     raise AttributeError('`indices` should be output feature map or a '
                          'tuple of 2 ints (y, x)')
 
