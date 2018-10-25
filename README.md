@@ -10,6 +10,10 @@ What does that means:
     + tinkering with the data and see what happens at the result (top-k result)
 - Inference must be constructed inside the model, with the input is the most basic data point (thinking of a complete stranger who needs to use your model, that person will not know anything about the nit-picks of your models and your data, they only have a data point and want to see the result coming out of your model)
 
+# Requirements
+
+Dawnet requires `pytorch` and `opencv` to work properly. Since many distributions exist for these libraries, we recommend user to install themselves to avoid messing up the environment. If you don't have `pytorch` or `opencv` installed, then you go to https://pytorch.org to install appropriate version, and `conda install -c conda-forge opencv` to install `opencv`.
+
 
 # Roadmap to usability
 

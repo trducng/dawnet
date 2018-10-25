@@ -1,3 +1,8 @@
+# temporary, build, dist folders
+build/
+dist/
+Dawnet.egg-info/
+
 # python compiled code
 *.pyc
 __pycache__
