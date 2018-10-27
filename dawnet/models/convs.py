@@ -405,3 +405,69 @@ class ResidualNextUnit(nn.Module):
 
         return residual + self.shortcuts(x)
 
+
+def get_conv_output_shape(input_shape, kernel_size, stride, padding):
+    """Get the convolutional output shape
+
+    # Arguments
+        input_shape [int or tuple of ints]: the array of shapes
+        kernel_size [int or tuple of ints]: the kernel size
+        stride [int or tuple of ints]: the stride
+        padding [int or tuple of ints]: the padding value
+    
+    # Returns
+        [int or tuple of ints]: the output shape
+    """
+    if isinstance(input_shape, int):
+        input_shape = [input_shape]
+    
+    if isinstance(kernel_size, int):
+        kernel_size = [kernel_size] * len(input_shape)
+    
+    if isinstance(stride, int):
+        stride = [stride] * len(input_shape)
+    
+    if isinstance(padding, int):
+        padding = [padding] * len(input_shape)
+    
+    result = []
+    for idx, each_value in enumerate(input_shape):
+        result.append(
+            (each_value - kernel_size[idx] + 2 * padding[idx]) / stride[idx]
+            + 1)
+    
+    return result
+
+def get_conv_input_shape(output_shape, kernel_size, stride, padding):
+    """Get the convolutional input shape
+
+    # Arguments
+        output_shape [int or tuple of ints]: the array of shapes
+        kernel_size [int or tuple of ints]: the kernel size
+        stride [int or tuple of ints]: the stride
+        padding [int or tuple of ints]: the padding value
+    
+    # Returns
+        [int or tuple of ints]: the input shape
+    """
+    if isinstance(output_shape, int):
+        output_shape = [output_shape]
+    
+    if isinstance(kernel_size, int):
+        kernel_size = [kernel_size] * len(output_shape)
+    
+    if isinstance(stride, int):
+        stride = [stride] * len(output_shape)
+    
+    if isinstance(padding, int):
+        padding = [padding] * len(output_shape)
+    
+    result = []
+    for idx, each_value in enumerate(output_shape):
+        result.append(
+            (each_value -1) * stride[idx]
+            - 2 * padding[idx]
+            + kernel_size[idx])
+    
+    return result
+    
