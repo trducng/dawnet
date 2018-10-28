@@ -55,7 +55,8 @@ As a result, we need to:
 - A training procedure to optimize a given input image to satisfy a result (python function on Jupyter notebook)
 
 **Roadmap**:
-- get the indices of input region that is responsible for a neuron activation
++ get the indices of input region that is responsible for a neuron activation
+    + given a channel index a layer (a specific 2D location might not be provided, if that is the case, find for all activated indices), collect the images and the specific patches that make that channel activated
 - widgets to view the effects of changes in the input images (or much better, changes in one layer of a model)
 - implement other visualization techniques in the literature:
     + https://distill.pub/2017/feature-visualization/

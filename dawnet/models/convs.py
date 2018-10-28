@@ -103,6 +103,7 @@ class DenseUnit(nn.Module):
         if self.dropout > 0:
             hidden = F.dropout(hidden, p=self.dropout, training=self.training)
 
+                                                        # pylint: disable=E1101
         return torch.cat([x, hidden], dim=1)
 
 
@@ -399,6 +400,7 @@ class ResidualNextUnit(nn.Module):
         for each_branch in self.blocks:
             hiddens.append(each_branch(x))
 
+                                                        # pylint: disable=E1101
         residual = torch.sum(hiddens, dim=1)
         if self.se_layer is not None:
             residual = self.se_layer(residual)
@@ -437,6 +439,7 @@ def get_conv_output_shape(input_shape, kernel_size, stride, padding):
             + 1)
     
     return result
+
 
 def get_conv_input_shape(output_shape, kernel_size, stride, padding):
     """Get the convolutional input shape

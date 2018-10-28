@@ -15,17 +15,23 @@
 #       model
 # @author: _john
 # =============================================================================
+import inspect
+import sys
 
+import numpy as np
 import torch
 import torch.nn as nn
 
+from dawnet.data.image import get_rectangle_vertices
 from dawnet.models.convs import get_conv_input_shape
+from dawnet.utils.dependencies import get_pytorch_layers
+from dawnet.diagnose.statistics import normalize_to_range
 
 
 def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
                     dilation=1):
     """Find indices of acting input neurons
-    
+
     Find the indices of neurons in the input that contribute to specified
     output. This method either do an unmaxpool2d operation if `idx` is None or
     return the indices of region that create idx
@@ -43,14 +49,14 @@ def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
         stride [int or tuple of 2 ints]: the stride of maxpool layer
         padding [int or tuple of 2 ints]: the padding value of maxpool layer
         dilation [int or tuple of 2 ints]: the dilation value of maxpool layer
-    
+
     # Returns
         [tuple of (y, x)]: the contributive region if `idx` is not None
         [torch Tensor]: the reconstructed input map if `idx` is None
     """
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size, kernel_size]
-    
+
     if stride is None:
         stride = kernel_size
     elif isinstance(stride, int):
@@ -104,12 +110,12 @@ def trace_conv2d(indices, output_shape, kernel_size, stride=None, padding=0,
 
     if isinstance(padding, int):
         padding = [padding, padding]
-    
+
     if isinstance(stride, int):
         stride = [stride, stride]
     elif stride is None:
         stride = kernel_size
-    
+
     if len(output_shape) != 2:
         raise AttributeError('2D convolution must have 2D shape')
 
@@ -155,13 +161,13 @@ def trace(layer_idx, indices, output_shape, model):
     """
     if layer_idx <= -1:
         return indices
-    
+
     if not isinstance(model, list):
         model = list(model.named_modules())
-    
+
     if isinstance(indices, tuple) and len(indices) == 2:
         indices = [indices]
-    
+
     result = []
     layer = model[layer_idx][1]
     if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.MaxPool2d):
@@ -172,12 +178,138 @@ def trace(layer_idx, indices, output_shape, model):
         for each_index in indices:
             result += trace_conv2d(each_index, output_shape, kernel_size,
                 stride, padding, dilation)
-        
+
         return trace(
             layer_idx - 1,
             result,
             get_conv_input_shape(output_shape, kernel_size, stride, padding),
             model)
-    
+
     else:
         return trace(layer_idx - 1, indices, output_shape, model)
+
+
+def run_partial_model(model, layer_idx, X):
+    """Run the model partially
+
+    @NOTE: this method might be refactored into the model class. It seems
+    putting there might be better, but this diagnosis operation might not be
+    popular enough to be put into that class. Moreover, this method assumes the
+    model to have very basic architecture, as all layers are sequentially
+    called, which might not be the case with more complex models.
+
+    # Arguments
+        model [torch.nn.Module]: the model
+        layer_idx [int]: the final layer index to retrieve output
+        X [torch.Tensor]: a valid input to the model
+
+    # Returns
+        [torch.Tensor]: the output of `layer_idx` when the `model` is fed w/ `X`
+    """
+    for idx, (_, layer) in enumerate(model.named_modules()):
+        if type(layer) not in get_pytorch_layers():
+            continue
+
+        X = layer(X)
+
+        if idx >= layer_idx:
+            break
+
+    return X
+
+
+def get_most_activated_outputs(tensor, channel_dim=1, channel_idx=None):
+    """Get the most activated outputs in a 4D tensor
+
+    The most activated neurons should satisfy the following conditions:
+        - must be larger than 0
+        - must be at the 75th-quartile
+        - must have normalized value be above of 50%
+    
+    @NOTE: the conditions above does not talk about absolute value.
+
+    # Arguments
+        tensor [4D torch Tensor]: the output channels of a conv layer
+        channel_dim [int]: the index of channel dimension
+        channel_idx [int]: the index of specific channel to find the most
+            activated outputs. If None, then find the most activated of
+            whole tensor
+
+    # Returns
+        [list of ints]: indices of most activated output in `tensor`
+    """
+    if isinstance(channel_idx, int):
+        if channel_dim == 1:
+            tensor = tensor[:,channel_idx,:,:]
+        elif channel_dim == -1 or channel_dim == 3:
+            tensor = tensor[:,:,:,channel_dim]
+        else:
+            raise AttributeError('invalid `channel_idx`, should be 1 or 3 but'
+                                 'receive {}'.format(channel_idx))
+    larger_0_mask = tensor > 0
+                                                        # pylint: disable=E1101
+    quantile_75_mask = tensor > torch.kthvalue(
+        tensor.view(-1).cpu(),
+        int(0.75 * len(tensor.view(-1))))[0].item()
+
+    value_50_mask = tensor > (
+        ((torch.max(tensor) - torch.min(tensor)) * 0.50
+         + torch.min(tensor)).item())
+
+    # [:,1:] to remove the batch channel
+    return (larger_0_mask
+            * quantile_75_mask
+            * value_50_mask).nonzero().cpu().data.numpy()[:,1:]
+
+
+def get_corresponding_image_patch(layer_idx, indices, model, X):
+    """Get the image patches corresponding to an image
+
+    # Arguments
+        layer_idx [int]: index of the layer that contains interested `indices`
+        indices [list of tuple of 2 ints]: multiple point, each tuple is
+            represented by y and x indices (0-counting)
+        model [torch nn.Module]: the model in a layer representation.
+        X [torch.Tensor]: a valid input to the model
+    
+    # Returns
+        [tuple of 4 ints]: top, bottom, left, right
+    """
+    output_map = run_partial_model(model, layer_idx, X)
+    result = trace(layer_idx, indices, tuple(output_map.shape[2:]), model)
+    top, bottom, left, right = get_rectangle_vertices(result)
+    
+    return top, bottom, left, right
+
+
+def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
+    """Collect the image patches that ignite a feature map
+
+    # Arguments
+        layer_idx [int]: index of the layer that contains interested `indices`
+        channel_idx [int]: the index of specific channel to find the most
+            activated outputs
+        model [torch nn.Module]: the model in a layer representation.
+        X [torch.Tensor]: a valid input to the model
+    
+    # Returns
+        [list of nd arrays]: list of images
+        [nd array]: the mask corresponding to the patches
+    """
+
+    # get the most activated locations in the channel in the layer
+    output_map = run_partial_model(model, layer_idx, X)
+    most_activated = get_most_activated_outputs(
+        output_map, 1, channel_idx=channel_idx)
+
+    # get the patches and construct the mask
+    X_np = X.squeeze().cpu().data.numpy()
+    mask = np.zeros(X_np.shape).astype(np.uint8)
+    results = []
+    for each_item in most_activated:
+        indices = tuple(each_item)
+        top, bottom, left, right = get_corresponding_image_patch(13, indices, model, X)
+        mask[top:bottom, left:right] = 1
+        results.append(255-X_np[top:bottom,left:right])
+
+    return results, mask

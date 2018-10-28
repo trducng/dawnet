@@ -11,11 +11,11 @@ from dawnet.models.convs import DenseUnit
 
 class _BaseModel(nn.Module):
     """Base class provides perception interface
-    
+
     Think of this class as human's perception and tuition. The perception is
     provided with some external stimuli, then automatically and unconsiously
     links those stimuli to some pattern.
-    
+
     Normal flow when training from scratch
         x_initialize ---> x_learn / x_train ---> x_save
 
@@ -37,7 +37,7 @@ class _BaseModel(nn.Module):
 
     def switch_forward_function(self, forward_fn=None):
         """Switch the forward function
-        
+
         # Arguments
             forward_fn [Function]: the forward function
         """
@@ -46,10 +46,38 @@ class _BaseModel(nn.Module):
         else:
             self._x_forward = forward_fn
 
+    def get_layer_indices(self, layer_type):
+        """Get the indices of layers that has the type `layer_type`
+
+        # Arguments
+            layer_type [torch.nn.Module]: the type of layer to compare on
+
+        # Returns
+            [list of ints]: list of indices that has layer match `layer_type`
+        """
+        indices = []
+        for idx, (_, layer) in enumerate(self.named_modules()):
+            if isinstance(layer, layer_type):
+                indices.append(idx)
+
+        return indices
+
+    def get_layer(self, layer_idx):
+        """Get the layer that has `layer_idx` in `named_modules()`
+
+        # Arguments
+            layer_idx [int]: the final layer index to retrieve output
+
+        # Returns
+            [str]: the layer name
+            [torch.nn.Module]: the specific layer
+        """
+        return list(self.named_modules())[layer_idx]
+
     # _x_ interfaces
     def x_load(self, *args, **kwargs):
         """Load the agent's saved state.
-        
+
         This loading should be constructed, so that the using of agent is
         self-contained for inference, .i.e. only the saved_path is necessary
         in order for the agent to infer and continue training.
@@ -59,7 +87,7 @@ class _BaseModel(nn.Module):
     def x_initialize(self, *args, **kwargs):
         """Initialize the agent's structure"""
         raise NotImplementedError('`x_initialize` should be subclassed')
-    
+
     def x_learn(self, *args, **kwargs):
         """Learn from a minibatch of data"""
         raise NotImplementedError('`x_learn` should be subclassed')
@@ -171,13 +199,13 @@ class BaseModel(_BaseModel):
     def construct_dense_block(self, in_channels, growth_rate, n_units,
         name='dense_unit'):
         """Construct the dense block
-        
+
         # Arguments
             in_channels [int]: the number of block's input channels
             growth_rate [int]: the number of output channels in each dense unit
             n_units [int]: the number of dense units in a block
             name [str]: the prefix-name of each dense unit
-        
+
         # Returns
             [nn.Sequential]: the block
             [int]: the number of output channels
@@ -186,24 +214,24 @@ class BaseModel(_BaseModel):
         for each_block in range(n_units):
             if each_block > 0:
                 in_channels += growth_rate
-            
+
             block.add_module(
                 '{}_{}'.format(name, each_block),
                 DenseUnit(in_channels=in_channels, growth_rate=growth_rate)
             )
-        
+
         return block, in_channels + growth_rate
-    
+
     def construct_dense_transition_block(self, in_channels, compression,
         name='dense_transition'):
         """Construct the transition block in densenet
-        
+
         # Arguments
             in_channels [int]: the number of input channels
             compression [int]: the compression value (be used to calculate the
                 number of output channels)
             name [str]: the prefix name for operation
-        
+
         # Returns
             [nn.Sequential]: the returned block
             [int]: the number of output channels
@@ -276,7 +304,7 @@ class DataParallel(nn.DataParallel):
 
     def x_load(self, *args, **kwargs):
         """Load the saved agent
-        
+
         # Arguments
             path [str]: the path to saved detail
         """
@@ -305,7 +333,7 @@ class DataParallel(nn.DataParallel):
 
     def x_save(self, *args, **kwargs):
         """Save the state
-        
+
         # Arguments
             state_path [str]: the path to file that store the agent's state
         """
