@@ -23,8 +23,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+from scipy import stats
 
-from dawnet.data.image import get_rectangle_vertices
+from dawnet.data.image import augment_image, get_rectangle_vertices, resize
 from dawnet.models.convs import get_conv_input_shape
 from dawnet.utils.dependencies import get_pytorch_layers
 from dawnet.diagnose.statistics import normalize_to_range
@@ -373,7 +374,8 @@ def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
 
 
 import cv2
-def changing_input_view_feature_channel(image, model, layer_idx, channel_idx):
+def changing_input_view_feature_channel(image, model, layer_idx, channel_idx,
+    color_bg=None):
     """View the feature map as input changes
 
     @NOTE: currently this function supports:
@@ -392,6 +394,8 @@ def changing_input_view_feature_channel(image, model, layer_idx, channel_idx):
         layer_idx [int]: the layer to view.
         channel_idx [int]: the channel to view.
     """
+    if color_bg is None:
+        color_bg = int(stats.mode(image+128, axis=None).mode.item())
                                                         # pylint: disable=E1101
     if next(model.parameters()).is_cuda:
         image_torch = torch.FloatTensor(image, device=torch.device('cuda:0'))
@@ -410,10 +414,16 @@ def changing_input_view_feature_channel(image, model, layer_idx, channel_idx):
     image_plot.imshow(image, cmap='gray')
     channel_plot.imshow(feature_map, cmap='gray')
 
-    def show_images(blur_type, blur_value, blur_kernel_size):
-        # enhance the image here
-        
-        image_new = cv2.medianBlur(image, blur_kernel_size)
+    def show_images(italicize, angle, pad_vertical, pad_horizontal, pt,
+        elas_alpha, elas_sigma, blur_type, blur_value, brightness, gauss_noise):
+
+        # enhance the image
+        image_new = image + 128
+        image_new = augment_image(image_new, color_bg,
+            italicize, angle, pad_vertical, pad_horizontal, pt, elas_alpha,
+            elas_sigma, blur_type, blur_value, brightness, gauss_noise)
+        image_new = resize(image_new, height=64)
+        image_new = image_new - 128
         prediction = model.x_infer(image_new)
 
         print('Prediction: {}'.format(prediction))
