@@ -13,7 +13,6 @@ if os.name == 'posix' and 'DISPLAY' not in os.environ:
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torchvision
 
 
 def resize(image, width=None, height=None):
@@ -138,3 +137,33 @@ def get_rectangle_vertices(pixels):
     bottom, right = pixels[-1]
 
     return top, bottom, left, right
+
+
+def paste_image(original_image, pasted_image, original_portion, pasted_portion):
+    """Cut a rectangular portion of `original_image` to `pasted_image`
+
+    # Arguments
+        original_image [nd array]: the original image to cut from
+        pasted_image [nd array]: the pasted image
+        original_portion [tuple of 4 ints]: top, bottom, left, right
+        pasted_portion [tuple of 2 ints]: top, left
+    
+    # Returns
+        [nd array]: the new `pasted_iamge` with portion replaced by
+            `original_image`
+    """
+    new_image = np.copy(pasted_image)
+
+    # get the positions
+    o_top, o_bottom, o_left, o_right = original_portion
+    p_top, p_left = pasted_portion
+    p_bottom, p_right = p_top + (o_bottom - o_top), p_left + (o_right - o_left)
+
+    new_image[p_top:p_bottom,
+              p_left:p_right] = original_image[o_top:o_bottom,o_left:o_right]
+    
+    return new_image
+
+
+def augment_image(image):
+    pass

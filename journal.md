@@ -47,12 +47,12 @@ Given a training model, it is good to know:
 - The learning progression of a feature map, from when it is randomized completely to when it is learned. Record the value of all feature maps on a group of images during training.
 
 As a result, we need to:
-- Quickly point out original patch in the image that is responsible for a large activation of a neuron in feature map (python function on Jupyter notebook)
-- Point out the specific pattern in that original patch that makes the neuron activation in the feature map large. How does the neuron activation changes when we change the pattern in that patch (python function on Jupyter notebook)
-- Have a function to cut a portion of an image and paste that portion to another image and see activation. (can do python function with script, needs to quickly get the pixel indices)
-- Have a function to quickly modify (e.g. draw into that image), and augment that image (e.g. add noise, blur,...), allow to view the feature maps in real time when this happens. (the augmentation can be done with python function, the draw seems to need some kind of interactive Python/Jupyter Notebook functionality)
-- Have a function to visualize feature activations, weights and biases.
-- A training procedure to optimize a given input image to satisfy a result (python function on Jupyter notebook)
+- [x] Quickly point out original patch in the image that is responsible for a large activation of a neuron in feature map (python function on Jupyter notebook)
+- [] Point out the specific pattern in that original patch that makes the neuron activation in the feature map large. *How does the neuron activation changes when we change the pattern in that patch (python function on Jupyter notebook). Answering this question might require a gradient-based method to observe the change in activation neuron in response to change in input image.*
+- [x] Have a function to cut a portion of an image and paste that portion to another image and see activation. (can do python function with script, needs to quickly get the pixel indices)
+- [x] Have a function to quickly modify (e.g. draw into that image), and augment that image (e.g. add noise, blur,...), allow to view the feature maps in real time when this happens. (the augmentation can be done with python function, the draw seems to need some kind of interactive Python/Jupyter Notebook functionality)
+- [x] Have a function to visualize feature activations, weights and biases.
+- [] A training procedure to optimize a given input image to satisfy a result (python function on Jupyter notebook)
 
 **Roadmap**:
 + get the indices of input region that is responsible for a neuron activation

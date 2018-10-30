@@ -16,8 +16,10 @@
 # @author: _john
 # =============================================================================
 import inspect
+import math
 import sys
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -26,6 +28,7 @@ from dawnet.data.image import get_rectangle_vertices
 from dawnet.models.convs import get_conv_input_shape
 from dawnet.utils.dependencies import get_pytorch_layers
 from dawnet.diagnose.statistics import normalize_to_range
+
 
 
 def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
@@ -262,7 +265,7 @@ def get_most_activated_outputs(tensor, channel_dim=1, channel_idx=None):
             * value_50_mask).nonzero().cpu().data.numpy()[:,1:]
 
 
-def get_corresponding_image_patch(layer_idx, indices, model, X):
+def collect_image_patches_for_neuron_activation(layer_idx, indices, model, X):
     """Get the image patches corresponding to an image
 
     # Arguments
@@ -287,8 +290,8 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
 
     # Arguments
         layer_idx [int]: index of the layer that contains interested `indices`
-        channel_idx [int]: the index of specific channel to find the most
-            activated outputs
+        channel_idx [int]: the index of specific channel in the feature map to
+            find the most activated outputs
         model [torch nn.Module]: the model in a layer representation.
         X [torch.Tensor]: a valid input to the model
     
@@ -308,8 +311,128 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
     results = []
     for each_item in most_activated:
         indices = tuple(each_item)
-        top, bottom, left, right = get_corresponding_image_patch(13, indices, model, X)
+        top, bottom, left, right = collect_image_patches_for_neuron_activation(
+            13, indices, model, X)
         mask[top:bottom, left:right] = 1
         results.append(255-X_np[top:bottom,left:right])
 
     return results, mask
+
+
+def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
+    """Visualize 3D tensor by viewing groups of 2D images
+
+    This function is used in conjunction with ipywidget. Suppose we have a
+    3D tensor of CxHxW, this function will view C images of shape HxW, and
+    paginated into smaller pages, each page contains `step` images.
+
+    # Arguments
+        tensor [3D np array or torch tensor]: the 3D tensor to view
+        dim [int]: the dimension to view 2D image (default first dimension)
+        max_columns [int]: number of images to show in each row
+        step [int]: the number of images to show
+        notebook [bool]: whether to view in jupyter notebook
+
+    # Returns
+        [ipywidget IntSlider]: the slider for previous, next page
+    """
+
+    if isinstance(tensor, torch.Tensor):
+        tensor = tensor.cpu().data.numpy()
+
+    tensor = tensor.squeeze()
+    if len(tensor.shape) == 2:
+        tensor = np.expand_dims(tensor, 0)
+    
+    if len(tensor.shape) != 3:
+        raise AttributeError('the tensor should be 3D shape, get {}'
+            .format(len(tensor.shape)))
+
+    fig = plt.figure(figsize=(8,8))        
+
+    def show_images(page=0):
+        """Show the image in `tensor`
+
+        # Arguments
+            page [int]: the page number (will be controled by IntSlider)
+        """
+        fig.clf()
+
+        image_list = list(tensor[page*step:(page+1)*step])
+        columns = min(max_columns, len(image_list))
+        rows = math.ceil(len(image_list) / columns)
+
+        for _idx, each_img in enumerate(image_list):
+            plot = fig.add_subplot(rows, columns, _idx+1)
+            plot.imshow(each_img, cmap='gray')
+        
+        if not notebook:
+            fig.show()
+    
+    return show_images
+
+
+import cv2
+def changing_input_view_feature_channel(image, model, layer_idx, channel_idx):
+    """View the feature map as input changes
+
+    @NOTE: currently this function supports:
+    - blur
+    - crop
+    - italicize
+    - noise
+    - random background
+
+    @NOTE:
+    - multiple layer_idx and channel_idx
+
+    # Argument
+        image [2D nd array]: the image
+        model [torch.nn.Dawnet]: the dawnet model
+        layer_idx [int]: the layer to view.
+        channel_idx [int]: the channel to view.
+    """
+                                                        # pylint: disable=E1101
+    if next(model.parameters()).is_cuda:
+        image_torch = torch.FloatTensor(image, device=torch.device('cuda:0'))
+        image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
+    else:
+        image_torch = torch.FloatTensor(image)
+        image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
+
+    feature_map = run_partial_model(model, layer_idx, image_torch)
+    feature_map = feature_map[:,channel_idx,:,:].squeeze().cpu().data.numpy()
+    
+    fig = plt.figure()
+    image_plot = fig.add_subplot(121)
+    channel_plot = fig.add_subplot(122)
+
+    image_plot.imshow(image, cmap='gray')
+    channel_plot.imshow(feature_map, cmap='gray')
+
+    def show_images(blur_type, blur_value, blur_kernel_size):
+        # enhance the image here
+        
+        image_new = cv2.medianBlur(image, blur_kernel_size)
+        prediction = model.x_infer(image_new)
+
+        print('Prediction: {}'.format(prediction))
+
+        if next(model.parameters()).is_cuda:
+            image_torch = torch.FloatTensor(
+                image_new, device=torch.device('cuda:0'))
+            image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
+        else:
+            image_torch = torch.FloatTensor(image)
+            image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
+
+        feature_map = run_partial_model(model, layer_idx, image_torch)
+        feature_map = feature_map[:,channel_idx,:,:]
+        feature_map = feature_map.squeeze().cpu().data.numpy()
+
+        image_plot.imshow(image_new, cmap='gray')
+        channel_plot.imshow(feature_map, cmap='gray')
+
+        fig.canvas.draw()
+    
+    return show_images

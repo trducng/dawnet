@@ -5,6 +5,7 @@
 import inspect
 import sys
 
+from IPython.display import Markdown, display
 import torch
 import torch.nn
 
@@ -42,3 +43,25 @@ def get_pytorch_layers():
         [set of class objects]: list of Pytorch layers
     """
     return VALID_LAYERS
+
+
+def print_md(string):
+    """Print the text with Markdown, mostly for used in Jupyter notebook
+
+    # Arguments
+        string [str]: the string to print
+    """
+    display(Markdown(string))
+
+
+def colored_md(string, color='black'):
+    """Construct the string for Markdown printing
+
+    # Arguments
+        string [str]: the string to construct
+        color [str]: the color used for CSS `style` color
+    
+    # Returns
+        [str]: the constructed string with desired format
+    """
+    return '<span style="color: {}">{}</span>'.format(color, string)
