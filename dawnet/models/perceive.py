@@ -6,6 +6,7 @@ import time
 import torch.nn as nn
 
 from dawnet.models.convs import DenseUnit
+from dawnet.utils.dependencies import get_pytorch_layers
 
 
 
@@ -74,6 +75,19 @@ class _BaseModel(nn.Module):
         """
         return list(self.named_modules())[layer_idx]
 
+    def get_number_layers(self):
+        """Get number of layers
+
+        # Returns
+            [int]: get number of layers
+        """
+        count = 0
+        for _, layer in self.named_modules():
+            if type(layer) in get_pytorch_layers():
+                count += 1
+
+        return count
+
     # _x_ interfaces
     def x_load(self, *args, **kwargs):
         """Load the agent's saved state.
@@ -107,6 +121,7 @@ class _BaseModel(nn.Module):
     def x_test(self, *args, **kwargs):
         """Perform testing"""
         raise NotImplementedError('x_test` should be subclassed')
+
 
 class BaseModel(_BaseModel):
     """The base architecture using convolutional layers"""
@@ -301,6 +316,18 @@ class DataParallel(nn.DataParallel):
 
         # let the driver know that it is wrapped by DataParallel
         self.module.switch_forward_function(self.__call__)
+
+    def get_layer_indices(self, *args, **kwargs):
+        """Get indices of specific type of layer"""
+        return self.module.get_layer_indices(*args, **kwargs)
+    
+    def get_layer(self, *args, **kwargs):
+        """Retrieve a layer"""
+        return self.module.get_layer(*args, **kwargs)
+    
+    def get_number_layers(self, *args, **kwargs):
+        """Get number of layers"""
+        return self.module.get_number_layers(*args, **kwargs)
 
     def x_load(self, *args, **kwargs):
         """Load the saved agent
