@@ -23,9 +23,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+from ipywidgets import interact_manual, widgets, Layout
 from scipy import stats
 
 from dawnet.data.image import augment_image, get_rectangle_vertices, resize
+from dawnet.data.text import view_string_prediction
 from dawnet.models.convs import get_conv_input_shape
 from dawnet.utils.dependencies import get_pytorch_layers
 from dawnet.diagnose.statistics import normalize_to_range
@@ -373,19 +375,18 @@ def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
     return show_images
 
 
-import cv2
 def changing_input_view_feature_channel(image, model, layer_idx, channel_idx,
-    color_bg=None):
+    label=None, color_bg=None, construct_widget=True):
     """View the feature map as input changes
 
-    @NOTE: currently this function supports:
-    - blur
-    - crop
-    - italicize
-    - noise
+    Currently this function supports: blur, italicize, noise, rotation,
+    padding, perspective transform, elastic transform, brightness
+    
+    @NOTE: it should support:
     - random background
+    - cropping
 
-    @NOTE:
+    @NOTE: support for viewing:
     - multiple layer_idx and channel_idx
 
     # Argument
@@ -393,6 +394,9 @@ def changing_input_view_feature_channel(image, model, layer_idx, channel_idx,
         model [torch.nn.Dawnet]: the dawnet model
         layer_idx [int]: the layer to view.
         channel_idx [int]: the channel to view.
+        color_bg [int]: the background pixel value (used for interpolation).
+            If None, this value will be the mode value of an image
+        construct_widget [bool]: whether to construct the widget directly
     """
     if color_bg is None:
         color_bg = int(stats.mode(image+128, axis=None).mode.item())
@@ -408,8 +412,8 @@ def changing_input_view_feature_channel(image, model, layer_idx, channel_idx,
     feature_map = feature_map[:,channel_idx,:,:].squeeze().cpu().data.numpy()
     
     fig = plt.figure()
-    image_plot = fig.add_subplot(121)
-    channel_plot = fig.add_subplot(122)
+    image_plot = fig.add_subplot(211)
+    channel_plot = fig.add_subplot(212)
 
     image_plot.imshow(image, cmap='gray')
     channel_plot.imshow(feature_map, cmap='gray')
@@ -419,14 +423,21 @@ def changing_input_view_feature_channel(image, model, layer_idx, channel_idx,
 
         # enhance the image
         image_new = image + 128
-        image_new = augment_image(image_new, color_bg,
-            italicize, angle, pad_vertical, pad_horizontal, pt, elas_alpha,
-            elas_sigma, blur_type, blur_value, brightness, gauss_noise)
+        image_new = augment_image(image=image_new, color_bg=color_bg,
+            italicize=italicize, angle=angle, pad_vertical=pad_vertical,
+            pad_horizontal=pad_horizontal, pt=pt, elas_alpha=elas_alpha,
+            elas_sigma=elas_sigma, blur_type=blur_type, blur_value=blur_value,
+            brightness=brightness, gauss_noise=gauss_noise)
         image_new = resize(image_new, height=64)
-        image_new = image_new - 128
+        image_new = image_new.astype(np.float32) - 128
         prediction = model.x_infer(image_new)
 
-        print('Prediction: {}'.format(prediction))
+        if label is None:
+            print('Prediction: {}'.format(prediction))
+        else:
+            print('Ground truth: {} - Prediction: '.format(label), end='')
+            _ = view_string_prediction(prediction, label, to_print=True,
+                                       notebook=True)
 
         if next(model.parameters()).is_cuda:
             image_torch = torch.FloatTensor(
@@ -445,4 +456,59 @@ def changing_input_view_feature_channel(image, model, layer_idx, channel_idx,
 
         fig.canvas.draw()
     
+    def update_blur_value(*args):
+        """Update the blur range based on the blur type"""
+        if blur_type.value == 1:
+            blur_value.max = 15
+            blur_value.min = 0
+            blur_value.step = 1
+            blur_value.value = 0
+        elif blur_type.value == 2 or blur_type.value == 3:
+            blur_value.max = 7
+            blur_value.min = 1
+            blur_value.step = 2
+            blur_value.value = 1
+
+    if not construct_widget:
+        return show_images
+    
+    blur_type = widgets.Dropdown(
+        options=[('N/A', 0), ('Gaussian', 1), ('Average', 2), ('Median', 3)],
+        value=0, description='Blur type:', layout=Layout(width='75%'))
+    blur_value = widgets.IntSlider(
+        min=0, max=10, step=1, value=0, description='Blur value:',
+        layout=Layout(width='75%'))
+    blur_type.observe(update_blur_value, 'value')
+
+    interact_manual(show_images,
+        italicize=widgets.FloatSlider(
+            min=-30, max=30, step=0.5, value=0, description='Italicize:',
+            layout=Layout(width='75%')),
+        angle=widgets.FloatSlider(
+            min=-10, max=10, step=0.5, value=0, description='Rotate:',
+            layout=Layout(width='75%')),
+        pad_vertical=widgets.FloatSlider(
+            min=0, max=0.7, step=0.01, value=0, description='Pad (vertical):',
+            layout=Layout(width='75%')),
+        pad_horizontal=widgets.FloatSlider(
+            min=0, max=0.7, step=0.01, value=0, description='Pad (horizontal):',
+            layout=Layout(width='75%')),
+        pt=widgets.FloatSlider(
+            min=0, max=0.3, step=0.02, value=0, description='Perspective:',
+            layout=Layout(width='75%')),
+        elas_alpha=widgets.FloatSlider(
+            min=0, max=1.0, step=0.05, value=0, description='Elastic (alpha):',
+            layout=Layout(width='75%')),
+        elas_sigma=widgets.FloatSlider(
+            min=0.4, max=0.6, step=0.05, value=0.4,
+            description='Elastic (sigma)', layout=Layout(width='75%')),
+        blur_type=blur_type,
+        blur_value=blur_value,
+        brightness=widgets.FloatSlider(
+            min=0.3, max=1.8, step=0.1, value=1, description='Brightness:',
+            layout=Layout(width='75%')),
+        gauss_noise=widgets.FloatSlider(
+            min=0, max=0.2, step=0.01, value=0, description='Gauss noise:',
+            layout=Layout(width='75%')))
+
     return show_images

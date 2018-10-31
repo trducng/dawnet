@@ -30,12 +30,12 @@ We would like to have training-related materials reside in the **agent**, the sa
 
 ## Interpretation
 
-------------------------------------------------------------------------------------------------------------------------
+----------------------------------------
 # Visualization for convolutional layers
 
 |Start Date|End Date  |
 |----------|----------|
-|2018-10-24|2018-10-28|
+|2018-10-24|2018-10-31|
 
 ## Description
 
@@ -57,7 +57,7 @@ As a result, we need to:
 **Roadmap**:
 + get the indices of input region that is responsible for a neuron activation
     + given a channel index a layer (a specific 2D location might not be provided, if that is the case, find for all activated indices), collect the images and the specific patches that make that channel activated
-- widgets to view the effects of changes in the input images (or much better, changes in one layer of a model)
++ widgets to view the effects of changes in the input images (or much better, changes in one layer of a model)
 - implement other visualization techniques in the literature:
     + https://distill.pub/2017/feature-visualization/
     + Google Deep dream

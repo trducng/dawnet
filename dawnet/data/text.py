@@ -40,9 +40,9 @@ def view_string_prediction(prediction, ground_truth, to_print=True,
         content = ''
         for each_result in result:
             if each_result[1]:
-                content += color_func(each_result[0], 'red')
-            else:
                 content += color_func(each_result[0])
+            else:
+                content += color_func(each_result[0], 'red')
 
         if notebook:
             print_md('<b>{}</b>'.format(content))

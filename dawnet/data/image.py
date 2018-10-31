@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.random as random
 from scipy.ndimage import rotate
+from skimage.morphology import skeletonize
 
 
 
@@ -171,6 +172,79 @@ def paste_image(original_image, pasted_image, original_portion, pasted_portion):
               p_left:p_right] = original_image[o_top:o_bottom,o_left:o_right]
     
     return new_image
+
+
+def smoothen_image(image, sampling_level=4, is_binary=False):
+    """Smoothen the image (to reduce zagged elements)
+
+    # Arguments
+        image [np array]: a binary image (1: background, 0: foreground)
+        sampling_level [int]: the higher the sampling level, the smoother the
+            dilation can be, default to 4, maximum 5 (higher value will cost
+            more memory)
+
+    # Returns
+        [np array]: an image with width normalized to `pixel` level
+    """
+    max_pixel = 1 if is_binary else 255
+    sampling_level = int(min(sampling_level, 5))
+    sampling_level = int(max(sampling_level, 1))
+
+    image = max_pixel - image
+
+    # smoothen the edges
+    for _ in range(sampling_level):
+        image = cv2.pyrUp(image)
+
+    for _ in range(4):
+        image = cv2.medianBlur(image, 3)
+
+    for _ in range(sampling_level):
+        image = cv2.pyrDown(image)
+
+    # revert the image
+    image = max_pixel - image
+
+    return image.astype(np.uint8)
+
+
+def skeletonize_image(image, pixel, is_binary):
+    """Skeletonize the image
+
+    # Arguments
+        image [np array]: a binary image (1: background, 0: foreground)
+        pixel [int]: a pre-defined character width
+        is_binary [bool]: whether the input image is a binary image
+
+    # Returns
+        [np array]: an image with width normalized to `pixel` level
+    """
+    if not is_binary:
+        image = cv2.threshold(image, 0, 255,
+                              cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+        image = (image / 255).astype(np.uint8)
+
+    # skeletonize the image
+    image = 1 - image
+    image = skeletonize(image)
+    image = image.astype(np.uint8)
+
+    # dilate the image to have `pixel` width
+    if pixel > 1:
+        kernel = np.ones((pixel, pixel), dtype=np.uint8)
+        image = cv2.dilate(image, kernel, iterations=1)
+    image = 1 - image
+
+    # convert image to 8-bit to smoothen and binarize if possible
+    image = image * 255
+    image = smoothen_image(image, is_binary=False)
+
+    if is_binary:
+        image = cv2.threshold(image, 0, 255,
+                              cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+        image = (image / 255).astype(np.uint8)
+
+    return image.astype(np.uint8)
 
 
 class PerspectiveTransform(iaa.PerspectiveTransform):
@@ -574,7 +648,7 @@ class Skeletonize(iaa.meta.Augmenter):
 
 
 def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
-        pad_horizontal=0, pt=0, elas_alpha=0, elas_sigma=0, blur_type=0,
+        pad_horizontal=0, pt=0, elas_alpha=0, elas_sigma=0.4, blur_type=0,
         blur_value=0, brightness=1.0, gauss_noise=0):
     """Augment the image using provided attributes"""
     augmentators = []
@@ -584,7 +658,7 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
     if italicize != 0:
         augmentators.append(ItalicizeLine(shear=italicize, cval=color_bg))
     
-    # rotate range (-5, 5, float, by 0.5)
+    # rotate range (-10, 10, float, by 0.5)
     if angle != 0:
         augmentators.append(RotateLine(angle=angle, cval=color_bg))
 
@@ -603,13 +677,13 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
             scale=pt, cval=color_bg, keep_size=False))
     
     # elastic alpha (0, 1.0, float, 0.05), sigma (0.4, 0.6, float, 0.05)
-    if elas_alpha != 0 and elas_sigma != 0:
+    if elas_alpha != 0:
         elas_sigma = max(elas_sigma, 0.4)
         augmentators.append(iaa.ElasticTransformation(
             alpha=elas_alpha, sigma=elas_sigma, cval=color_bg))
     
     # blur_type: 0, 1, 2, 3 -> None, Gaussian, Average, Median, blur_value
-    # either (0.0, 1.0, float, 0.1) for Gaussian or (1, 5, int, 2) for other
+    # either (0.0, 1.5, float, 0.1) for Gaussian or (1, 5, int, 2) for other
     if blur_type == 1:
         blur_value = blur_value / 10
         augmentators.append(iaa.GaussianBlur(blur_value))
@@ -620,7 +694,7 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
         blur_value = max(blur_value, 1)
         augmentators.append(iaa.MedianBlur(blur_value))
     
-    # brightness (0.9, 1.1, float, 0.05)
+    # brightness (0.3, 1.8, float, 0.05)
     if brightness != 1:
         augmentators.append(iaa.Multiply(brightness))
     
