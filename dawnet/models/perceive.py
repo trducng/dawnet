@@ -9,7 +9,6 @@ from dawnet.models.convs import DenseUnit
 from dawnet.utils.dependencies import get_pytorch_layers
 
 
-
 class _BaseModel(nn.Module):
     """Base class provides perception interface
 
@@ -87,6 +86,15 @@ class _BaseModel(nn.Module):
                 count += 1
 
         return count
+
+    def get_number_parameters(self, verbose=False):
+        """Get the number of parameters
+        
+        # Arguments
+            verbose [bool]: whether to print in human easily readable format
+        """
+        params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        return params
 
     # _x_ interfaces
     def x_load(self, *args, **kwargs):

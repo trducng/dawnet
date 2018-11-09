@@ -48,17 +48,17 @@ Given a training model, it is good to know:
 
 As a result, we need to:
 - [x] Quickly point out original patch in the image that is responsible for a large activation of a neuron in feature map (python function on Jupyter notebook)
-- [] Point out the specific pattern in that original patch that makes the neuron activation in the feature map large. *How does the neuron activation changes when we change the pattern in that patch (python function on Jupyter notebook). Answering this question might require a gradient-based method to observe the change in activation neuron in response to change in input image.*
+- [x] Point out the specific pattern in that original patch that makes the neuron activation in the feature map large. *How does the neuron activation changes when we change the pattern in that patch (python function on Jupyter notebook). Answering this question might require a gradient-based method to observe the change in activation neuron in response to change in input image.*
 - [x] Have a function to cut a portion of an image and paste that portion to another image and see activation. (can do python function with script, needs to quickly get the pixel indices)
 - [x] Have a function to quickly modify (e.g. draw into that image), and augment that image (e.g. add noise, blur,...), allow to view the feature maps in real time when this happens. (the augmentation can be done with python function, the draw seems to need some kind of interactive Python/Jupyter Notebook functionality)
 - [x] Have a function to visualize feature activations, weights and biases.
-- [] A training procedure to optimize a given input image to satisfy a result (python function on Jupyter notebook)
+- [] A training procedure to optimize a given input image to satisfy a result (python function on Jupyter notebook) -> Nguyen .et al mechanism
 
 **Roadmap**:
 + get the indices of input region that is responsible for a neuron activation
     + given a channel index a layer (a specific 2D location might not be provided, if that is the case, find for all activated indices), collect the images and the specific patches that make that channel activated
 + widgets to view the effects of changes in the input images (or much better, changes in one layer of a model)
-- implement other visualization techniques in the literature:
+- implement other visualization techniques in the literature -> longer term.
     + https://distill.pub/2017/feature-visualization/
     + Google Deep dream
     + http://cs231n.github.io/understanding-cnn/
@@ -74,3 +74,30 @@ As a result, we need to:
 ## Interpretation
 
 
+----------------------------------------
+# Keep track of model's number of floating point operations
+
+|Start Date|End Date  |
+|----------|----------|
+|2018-11-10|2018-11-12|
+
+## Description
+
+In developing a model, it is sometimes important to balance accuracy performance with computing performance. If a model achieves 95% accuracy at a cost of 5 minutes, while another model achieves 93% accuracy at a cost of 3 seconds, then the second model can become appealing in several use cases (for example, on mobile...). To track a model's computing performance, people usually use the models number of parameters and the model's number of floating point operations. The former one is easy to calculate, as we only need to count the total number of elements in parameter matrices. The later one is a little bit trickier, as Pytorch does not out-of-the-box support this calculation, and different layers have different formula to calculate the number of floating point operations.
+
+On github, there are 2 sources integrate this kind of calculation (the implementations look largely similar):
+- https://github.com/ShichenLiu/CondenseNet/blob/master/utils.py
+- https://github.com/sovrasov/flops-counter.pytorch/blob/master/flops_counter.py
+
+The second link seems to be more holistic in its calculation. It lacks RNN floating point calculation, which we will need to fill in.
+
+Currently, I am thinking whether:
+- integrate the calculation directly by subclassing,
+- use mixings
+- integrate the calculation as hooks (as in the above implementations)
+
+|                    |Pros|Cons|
+|--------------------|----|----|
+| Directly integrate |(1) all the calculations can be done directly, (2) might work with other kinds of integrations in this module, (3) can be called once in the model|(1) will require a lot lot lot of subclassing (2) as a result, the code can be easily messy, (3) will have hard time when Pytorch interface changes, (4) not portable|
+|Mixings             |(1) can be reused for similar layers| (1) cognitive cost to remember to add mixins to layers in the model, (2) use not be portable to non dawnet models, (3) can have hard time organizing the mixins|
+|As hooks            |(1) reusable accross Pytorch models, (2) can be called once in the model|(1) requires a lot of if-else inside, (2) can have hard time organizing the hooks, (3) rather nonPythonic to access hidden methods|

@@ -28,17 +28,32 @@ def view_string_prediction(prediction, ground_truth, to_print=True,
             character is correct
     """
 
-    result = []
+    result_pred = []
     for each_result in difflib.ndiff(ground_truth, prediction):
         if each_result[0] == ' ':
-            result.append((each_result[-1], True))
+            result_pred.append((each_result[-1], True))
         elif each_result[0] == '+':
-            result.append((each_result[-1], False))
+            result_pred.append((each_result[-1], False))
+
+    result_ground = []
+    for each_result in difflib.ndiff(prediction, ground_truth): # merely switch
+        if each_result[0] == ' ':
+            result_ground.append((each_result[-1], True))
+        elif each_result[0] == '+':
+            result_ground.append((each_result[-1], False))
 
     if to_print:
         color_func = colored_md if notebook else partial(colored,attrs=['bold'])
         content = ''
-        for each_result in result:
+        for each_result in result_ground:
+            if each_result[1]:
+                content += color_func(each_result[0])
+            else:
+                content += color_func(each_result[0], 'green')
+
+        content += color_func(' ==> ')
+        
+        for each_result in result_pred:
             if each_result[1]:
                 content += color_func(each_result[0])
             else:
@@ -50,4 +65,4 @@ def view_string_prediction(prediction, ground_truth, to_print=True,
             colorama.init()
             print(content)
 
-    return result
+    return result_pred, result_ground
