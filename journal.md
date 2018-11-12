@@ -101,3 +101,19 @@ Currently, I am thinking whether:
 | Directly integrate |(1) all the calculations can be done directly, (2) might work with other kinds of integrations in this module, (3) can be called once in the model|(1) will require a lot lot lot of subclassing (2) as a result, the code can be easily messy, (3) will have hard time when Pytorch interface changes, (4) not portable|
 |Mixings             |(1) can be reused for similar layers| (1) cognitive cost to remember to add mixins to layers in the model, (2) use not be portable to non dawnet models, (3) can have hard time organizing the mixins|
 |As hooks            |(1) reusable accross Pytorch models, (2) can be called once in the model|(1) requires a lot of if-else inside, (2) can have hard time organizing the hooks, (3) rather nonPythonic to access hidden methods|
+
+The 3rd option is a better choice for initial implementation:
+- code already have
+- works a lot of place
+- easy integration
+
+After this integration, thinks about how to incorporate to _Base_Model
+
+## Deliverables
+
+- [x] initial integration of hooks flop counting
+- [x] add rnn operation
+
+## Conclusion
+
+Learn a little more about LSTM. The main gotcha is the number of hidden neurons is equal to the number of cells.
