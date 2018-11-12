@@ -214,9 +214,12 @@ def lstm_flops_counter_hook(module, input_layer, output_layer):
     input_size = module.input_size
     hidden_size = module.hidden_size
 
+<<<<<<< HEAD
     num_directions = 2 if module.bidirectional else 1
     num_layers = module.num_layers
 
+=======
+>>>>>>> 83ac6d8e6a25be08df5c1d53bc9956d5c8cf355e
     # calculate the gate operations
     each_gate_count = 2* input_size * hidden_size + 2* hidden_size * hidden_size
     if module.bias:
@@ -234,11 +237,16 @@ def lstm_flops_counter_hook(module, input_layer, output_layer):
     # each layer count
     each_layer_count = gate_count + cell_update_count + hidden_update_count
 
+<<<<<<< HEAD
     # all layer count
     all_layer_count = each_layer_count * num_layers * num_directions
 
     # total count
     module.__flops__ += all_layer_count * batch_size * seq_length
+=======
+    # total count
+    module.__flops__ += each_layer_count * batch_size * seq_length
+>>>>>>> 83ac6d8e6a25be08df5c1d53bc9956d5c8cf355e
 
 
 def batch_counter_hook(module, input, output):
