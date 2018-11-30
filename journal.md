@@ -67,11 +67,10 @@ As a result, we need to:
     + http://yosinski.com/deepvis
     + https://jacobgil.github.io/deeplearning/filter-visualizations
 
-## Discussion
-
 ## Deliverables
 
-## Interpretation
+- [x] `diagnose/statistics.py`: obtaining model statistics
+- [x] `diagnose/trace.py`: trace activation information backward
 
 
 ----------------------------------------
@@ -117,3 +116,35 @@ After this integration, thinks about how to incorporate to _Base_Model
 ## Conclusion
 
 Learn a little more about LSTM. The main gotcha is the number of hidden neurons is equal to the number of cells.
+
+
+----------------------------------------
+# Incorporate Lucid's feature visualization
+
+|Start Date|End Date  |
+|----------|----------|
+|2018-11-17|2018-11-19|
+
+## Description
+Lucid's feature visualization [1](https://distill.pub/2017/feature-visualization/) [2](https://github.com/tensorflow/lucid/blob/master/lucid/optvis/render.py) [3](https://colab.research.google.com/github/tensorflow/lucid/blob/master/notebooks/tutorial.ipynb) provides fascinating way to visualize the inner working of a hidden neuron or a combination of hidden neurons in the neural network. If any `dawn` model has this capability, we can inspect model performance, and (I get an intuition) we can learn more on how to improve model. Utilitarian reasons aside, implmementing this functionality would be fascinating as well. Let's see how it is going.
+
+# Experiments
+The heart of Lucid's visualization seems to reside in this [script](https://github.com/tensorflow/lucid/blob/master/lucid/optvis/render.py), especially in the function `make_vis_T`. This function requires:
+- a trained model
+- a combination of neurons (here called objectives) to optimize (the nice thing is the objective can be combined from multiple separate objectives)
+- some preconditioned image parameterization, by default: RGB 128x128, spatial Fourier transformation, decorrelated color (knowing some color components cannot predict remaining color components)
+- an optimization, by default Adam w/ learning rate 0.05, for 512 iterations
+- some image preprocessing transformations, by default: random padding -> random crop (jitter) 8 -> random pixel scaling -> random rotation -> random crop (jitter) 4
+
+Then, in order to obtain the image, they maximize the output activation of:
+- a single neuron       -> currently the simplest thing to implement
+- a single channel
+- some direction
+- single (x, y) position along a direction
+- visualize according to cosine similarity
+- deep dream method
+- a combination of channels (some interpolation)
+
+
+
+

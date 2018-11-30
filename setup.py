@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="Dawnet",
-    version="0.0.1",
+    version="0.0.2",
     author="_john",
     author_email="trungduc1992@gmail.com",
     description="A deep learning package to inquire intelligence",
@@ -24,7 +24,7 @@ setuptools.setup(
     install_requires=[
         "numpy>=1.14.0",
         "Pillow>=5.3.0",
-        "matplotlib>=3.0.0"
+        "matplotlib>=2.1.2",
     ],
     python_requires=">=3.5"
 )

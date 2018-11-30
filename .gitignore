@@ -1,4 +1,5 @@
 # temporary, build, dist folders
+temp/
 build/
 dist/
 Dawnet.egg-info/
