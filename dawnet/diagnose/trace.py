@@ -407,7 +407,6 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
             plot.axis('off')
             plot.imshow(each_img, cmap='gray')
         
-        fig.tight_layout()
         plt.subplots_adjust(
             left=0, right=1, top=1, bottom=0, wspace=0.01, hspace=0.01)
         fig.show()
@@ -416,10 +415,66 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
         return show_images
 
     page_slider = widgets.IntSlider(
-        min=0, max=tensor.shape[0] // step, step=1, value=0,
+        min=0, max=math.ceil(tensor.shape[0]/step - 1), step=1, value=0,
         description='Page:', layout=Layout(width='75%'))
     interact_manual(show_images, page=page_slider)
 
+    return show_images
+
+
+def view_feature_maps(model, X):
+    """View model feature maps"""
+    feature_maps = get_feature_maps(model, X)
+    
+    fig = plt.figure()
+    def show_images(layer=0, page=0):
+        """Show the image in `tensor`
+
+        # Arguments
+            page [int]: the page number (will be controled by IntSlider)
+        """
+        fig.clf()
+
+        tensor = feature_maps[layer][2][0,:]
+        max_rows, max_columns = get_subplot_rows_cols(tensor)
+        step = max_rows * max_columns
+
+        image_list = list(tensor[page*step:(page+1)*step])
+        columns = min(max_columns, len(image_list))
+        rows = math.ceil(len(image_list) / columns)
+
+        fig.suptitle('Layer {} - Type {}'.format(
+            feature_maps[layer][0], feature_maps[layer][1].__name__),
+            fontsize=16)
+        for _idx, each_img in enumerate(image_list):
+            plot = fig.add_subplot(rows, columns, _idx+1)
+            plot.set_title('{}'.format(_idx + page*step))
+            plot.axis('off')
+            plot.imshow(each_img, cmap='gray')
+        
+        plt.subplots_adjust(
+            left=0, right=1, top=0.9, bottom=0, wspace=0.01, hspace=0.01)
+        fig.show()
+    
+    def update_num_pages(*args):
+        """Change the number of pages as the layer changes"""
+        layer = layer_slider.value
+        tensor = feature_maps[layer][2][0,:]
+        page_slider.max = math.ceil(tensor.shape[0] // np.prod(
+            get_subplot_rows_cols(tensor)) - 1)
+    
+    tensor = feature_maps[0][2][0,:]
+    layer_slider = widgets.IntSlider(
+        min=0, max=len(feature_maps) - 1, step=1, value=0,
+        description='Layer:', layout=Layout(width='75%'))
+    page_slider = widgets.IntSlider(
+        min=0,
+        max=math.ceil(tensor.shape[0] / np.prod(
+            get_subplot_rows_cols(tensor)) - 1),
+        step=1, value=0, description='Page:', layout=Layout(width='75%'))
+    layer_slider.observe(update_num_pages, 'value')
+    interact_manual(show_images, layer=layer_slider, page=page_slider)
+    
     return show_images
 
 
