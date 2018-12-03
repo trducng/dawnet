@@ -2,8 +2,8 @@
 # Zeiler and Fergus provided some great explanations and inspiration
 # for the idea in this code: https://arxiv.org/abs/1311.2901
 # Currently we should take notice of these issues:
-#   - unfilter: the paper use inverse of conv weights, while we just want to see
-#       the position of input neurons that are responsible for the output
+#   - unfilter: the paper use inverse of conv weights, while we just want to
+#       see the position of input neurons that are responsible for the output
 #   - the aim of authors is actually to reconstruct the image as it influences
 #       the neuron, while my aim is just to see the rectangular region in the
 #       image that is responsible for neuron output
@@ -26,7 +26,9 @@ import torch.nn as nn
 from ipywidgets import interact_manual, widgets, Layout
 from scipy import stats
 
-from dawnet.data.image import augment_image, get_rectangle_vertices, resize
+from dawnet.data.image import (
+    augment_image, get_rectangle_vertices, resize,
+    get_subplot_rows_cols)
 from dawnet.data.text import view_string_prediction
 from dawnet.models.convs import get_conv_input_shape
 from dawnet.utils.dependencies import get_pytorch_layers
@@ -224,6 +226,33 @@ def run_partial_model(model, layer_idx, X):
     return X
 
 
+def get_feature_maps(model, X):
+    """Get model feature maps
+
+    # Arguments
+        model [torch.nn.Module]: the model
+        X [torch.Tensor]: a valid input to the model
+    
+    # Returns
+        [list of tuples of 3]: the feature maps (idx, layer class, np output)
+    """
+    result = []
+    for idx, (_, layer) in enumerate(model.named_modules()):
+        if type(layer) not in get_pytorch_layers():
+            # skip for non-Pytorch class
+            continue
+
+        if (type(layer) in get_pytorch_layers() and
+            type(layer) not in get_pytorch_layers(conv=True)):
+            # stop when stepping into classifiers
+            break
+        
+        X = layer(X)
+        result.append((idx, type(layer), X.cpu().data.numpy()))
+    
+    return result
+
+
 def get_most_activated_outputs(tensor, channel_dim=1, channel_idx=None):
     """Get the most activated outputs in a 4D tensor
 
@@ -322,7 +351,8 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
     return results, mask
 
 
-def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
+def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
+    construct_widget=True):
     """Visualize 3D tensor by viewing groups of 2D images
 
     This function is used in conjunction with ipywidget. Suppose we have a
@@ -332,8 +362,8 @@ def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
     # Arguments
         tensor [3D np array or torch tensor]: the 3D tensor to view
         dim [int]: the dimension to view 2D image (default first dimension)
+        max_rows [int]: number of rows of images
         max_columns [int]: number of images to show in each row
-        step [int]: the number of images to show
         notebook [bool]: whether to view in jupyter notebook
 
     # Returns
@@ -350,8 +380,14 @@ def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
     if len(tensor.shape) != 3:
         raise AttributeError('the tensor should be 3D shape, get {}'
             .format(len(tensor.shape)))
+    
+    max_rows, max_columns = get_subplot_rows_cols(tensor)
+    step = max_rows * max_columns
 
-    fig = plt.figure(figsize=(8,8))        
+    if construct_widget:
+        fig = plt.figure()
+    else:
+        fig = plt.figure(figsize=(8, 8))        
 
     def show_images(page=0):
         """Show the image in `tensor`
@@ -367,11 +403,23 @@ def view_3d_tensor(tensor, dim=0, max_columns=5, step=25, notebook=False):
 
         for _idx, each_img in enumerate(image_list):
             plot = fig.add_subplot(rows, columns, _idx+1)
+            plot.set_title('{}'.format(_idx + page*step))
+            plot.axis('off')
             plot.imshow(each_img, cmap='gray')
         
-        if not notebook:
-            fig.show()
+        fig.tight_layout()
+        plt.subplots_adjust(
+            left=0, right=1, top=1, bottom=0, wspace=0.01, hspace=0.01)
+        fig.show()
     
+    if not construct_widget:
+        return show_images
+
+    page_slider = widgets.IntSlider(
+        min=0, max=tensor.shape[0] // step, step=1, value=0,
+        description='Page:', layout=Layout(width='75%'))
+    interact_manual(show_images, page=page_slider)
+
     return show_images
 
 

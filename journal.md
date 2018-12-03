@@ -145,6 +145,7 @@ Then, in order to obtain the image, they maximize the output activation of:
 - deep dream method
 - a combination of channels (some interpolation)
 
+...(suspend)
 
 
 

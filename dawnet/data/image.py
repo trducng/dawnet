@@ -22,37 +22,25 @@ from scipy.ndimage import rotate
 from skimage.morphology import skeletonize
 
 
-
-def resize(image, width=None, height=None):
-    """Resize the image to match width and height
-    
-    If any of the width or heigth is missing, then the image is rescaled
-    to have the size of the given height or width.
+def get_rectangle_vertices(pixels):
+    """Given a list of pixels of a rectangle, retrieve the 4 rectangle corners
 
     # Arguments
-        image [np array]: the image
-        width [int]: the width
-        height [int]: the height
+        pixels [list of tuples of 2 ints]: the list of pixels in y, x
     
     # Returns
-        [np array]: the resized image
+        [list of 4 ints]: coordinate of top, bottom, left, right
     """
-    if width is None and height is None:
-        raise AttributeError('either `width` or `height` must be given')
+    pixels = sorted(pixels, key=lambda obj: obj[0])
+    pixels = sorted(pixels, key=lambda obj: obj[1])
 
-    if width is not None and height is not None:
-        return cv2.resize(image, (width, height), cv2.INTER_LINEAR)
+    top, left = pixels[0]
+    bottom, right = pixels[-1]
 
-    height_original, width_original = image.shape[:2]
-    if width is None:
-        width = int(height * width_original / height_original)
-
-    if height is None:
-        height = int(width * height_original / width_original)
-    
-    return cv2.resize(image, (width, height), cv2.INTER_LINEAR)
+    return top, bottom, left, right
 
 
+## Jupyter notebooks
 def show_images(image_list, label_list=None, max_columns=10, notebook=False):
     """Show list of images
 
@@ -129,24 +117,6 @@ def show_image_ascii(image, bgr=False):
         print(each_row)
 
 
-def get_rectangle_vertices(pixels):
-    """Given a list of pixels of a rectangle, retrieve the 4 rectangle corners
-
-    # Arguments
-        pixels [list of tuples of 2 ints]: the list of pixels in y, x
-    
-    # Returns
-        [list of 4 ints]: coordinate of top, bottom, left, right
-    """
-    pixels = sorted(pixels, key=lambda obj: obj[0])
-    pixels = sorted(pixels, key=lambda obj: obj[1])
-
-    top, left = pixels[0]
-    bottom, right = pixels[-1]
-
-    return top, bottom, left, right
-
-
 def paste_image(original_image, pasted_image, original_portion, pasted_portion):
     """Cut a rectangular portion of `original_image` to `pasted_image`
 
@@ -171,6 +141,83 @@ def paste_image(original_image, pasted_image, original_portion, pasted_portion):
               p_left:p_right] = original_image[o_top:o_bottom,o_left:o_right]
     
     return new_image
+
+
+def get_subplot_rows_cols(tensor, fixed_rows=None, fixed_cols=None):
+    """The the suitable number of rows and columns for subplotting
+
+    The suitable number of images must the one that makes the overal figure
+    square.
+
+    condition  columns   rows
+    == 1       -> 5        5
+    <= 2        -> 4        4
+    <= 4        -> 3        4
+    <= 6        -> 2        4
+                  1        4
+
+    # Argument
+        tensor [3D np or torch tensor]: the tensor to view subplots
+    
+    # Returns
+        [tuple of 2 ints]: the number of rows and columns
+    """
+    height, width = tensor.shape[-2:]
+    
+    reverse = False
+    if height > width:
+        width, height = height, width
+        reverse = True
+    
+    if width // height == 1:
+        columns, rows = 5, 5
+    elif width // height <= 2:
+        columns, rows = 4, 5
+    elif width // height <= 4:
+        columns, rows = 3, 4
+    elif width // height <= 6:
+        columns, rows = 2, 4
+    else:
+        columns, rows = 1, 4
+    
+    if reverse:
+        columns, rows = rows, columns
+    
+    rows = rows if fixed_rows is None else fixed_rows
+    columns = columns if fixed_cols is None else fixed_cols
+
+    return rows, columns
+
+
+## Image manipulation
+def resize(image, width=None, height=None):
+    """Resize the image to match width and height
+    
+    If any of the width or heigth is missing, then the image is rescaled
+    to have the size of the given height or width.
+
+    # Arguments
+        image [np array]: the image
+        width [int]: the width
+        height [int]: the height
+    
+    # Returns
+        [np array]: the resized image
+    """
+    if width is None and height is None:
+        raise AttributeError('either `width` or `height` must be given')
+
+    if width is not None and height is not None:
+        return cv2.resize(image, (width, height), cv2.INTER_LINEAR)
+
+    height_original, width_original = image.shape[:2]
+    if width is None:
+        width = int(height * width_original / height_original)
+
+    if height is None:
+        height = int(width * height_original / width_original)
+    
+    return cv2.resize(image, (width, height), cv2.INTER_LINEAR)
 
 
 def smoothen_image(image, sampling_level=4, is_binary=False):
