@@ -148,4 +148,85 @@ Then, in order to obtain the image, they maximize the output activation of:
 ...(suspend)
 
 
+----------------------------------------
+# Incorporate super-convergence for training
+
+|Start Date|End Date  |
+|----------|----------|
+|2018-12-05|2018-12-06|
+
+## Description
+
+Super-convergence seems to be much hyped. It is inspired from the observation that large learning rate produces short term negative effect and but provides long term beneficial effect. The author of this method suggests to triangulate the learning rate between maximum and minimum bounds of learning rate. It is also claimed by the author that super-convergence helps when we have limited amount of training data.
+
+It is referred in these papers:
+- [Cyclical Learning Rates for Training Neural Networks](https://arxiv.org/abs/1506.01186)
+- [Super-Convergence: Very Fast Training of Neural Networks Using Large Learning Rates](https://arxiv.org/abs/1708.07120)
+
+From the first paper, we need to pay attention to some points:
+- Terms: max_lr, base_lr, stepsize
+- Visual shape: below is triangular variation, we can have hypobolic or other shape, but the paper claims that they all have similar performance, hence triangular variation is preferred due to simplicity
+
+```
+_________________________________________max_lr
+        /\          /\          /\           
+       /  \        /  \        /  \
+      /    \      /    \      /    \
+     /      \    /      \    /      \
+    /        \  /        \  /        \
+___/__________\/__________\/__________\__base_lr
+  |<---->| stepsize
+```
+- The `max_lr`, `base_lr` value can be determined in 2 ways:
+    + Increase the learning rate gradually, choose the learning rate inducing increasing accuracy as `base_lr`, choose the learning rate marking the degradation as `max_lr`
+    + If you know the converging learning rate, set `max_lr` = 2 * that learning rate, and `base_lr` = `max_lr` / 4
+- The `stepsize` value is 2 to 10 times the epoch.
+
+The second paper (super-convergence) provides:
+- The `max_lr`, `base_lr` value can be determined with increasing the learning rate gradually, choose the learning rate marking degradation as `max_lr`, and divide this number by 3 or 4 to obtain the `base_lr`
+- Use LR range test to see if super-convergence is possible for an architecture (LR range is essentially the above bullet point)
+- Before stopping training, allow the learning rate to shrink several magnitude smaller than the `base_lr`
+
+```
+                                         max_lr
+        /\          /\          /\           
+       /  \        /  \        /  \
+      /    \      /    \      /    \
+     /      \    /      \    /      \
+    /        \  /        \  /        \
+   /          \/          \/          \  base_lr
+  |<---->| stepsize                    \
+                                        \
+                                         \
+                                          \
+                                           \
+                                            \
+                                             \
+                                              \
+                                       |<---->| stepsize
+```
+
+Variation:
+
+```
+                                                           max_lr
+        /\                /\                /\           
+       /  \              /  \              /  \
+      /    \            /    \            /    \
+     /      \          /      \          /      \
+    /        \        /        \        /        \
+   /          \______/          \______/          \______  base_lr
+  |<---->| stepsize |                 |                 | -> save checkpoint
+```
+
+In order to create super-convergence, we need: `max_lr`, `base_lr`, `stepsize`, `current_iteration`, and a signal to know when training needs to stabelize, and when training is stabelize, how to handle learning rate. In the mean time, this can be accomplished by manual intervention, and the learning rate is reduced stepwise (or with other traditional learning rate scheduler methods).
+
+
+## Deliverables
+
+- [x] `training/hyper.py:SuperConvergence`: super-convergence training
+- [x] `diagnose/vis.py:draw_history`: visualize learning rate (requires combining multiple plot, requires set appropriate default height and width)
+- [x] `training/hyper.py:SuperConvergence`, `models/perceive.py:BaseModel`: save the scheduler into checkpoint
+- [x] `training/hyper.py:SuperConvergence`, `models/perceive.py:BaseModel`: save seperate checkpoints when the learning rate is at the lowest
+- [] learning rate finder
 

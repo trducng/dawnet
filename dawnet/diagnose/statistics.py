@@ -4,13 +4,6 @@
 import os
 from collections import defaultdict
 
-import matplotlib
-
-if os.name == 'posix' and 'DISPLAY' not in os.environ:
-    # 'agg' backend for headless server (not connected to any display)
-    matplotlib.use('agg')
-
-import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -63,44 +56,6 @@ def get_statistics(nd_array):
     return mean, median, std, max_value, min_value
 
 
-def draw_history(history, attributes=None):
-    """Draw the training progress based on history
-    
-    # Arguments
-        history [list of objs]: list of historical measurements
-        attributes [str or list of strs]: the attribute to draw on
-    """
-    iteration_attr = 'itr'
-    if len(history) == 0:
-        return
-
-    if isinstance(attributes, str):
-        attributes = [attributes]
-    elif attributes is None:
-        attributes = []
-        for each_key in history[0].keys():
-            if each_key == iteration_attr:
-                continue
-            attributes.append(each_key)
-    elif not isinstance(attributes, list):
-        raise AttributeError('the `attributes` argument must be list of '
-                             'attribute strings')
-
-    xs = []
-    ys = defaultdict(list)
-
-    for each_history in history:
-        xs.append(each_history[iteration_attr])
-        for each_attr in attributes:
-            ys[each_attr].append(each_history[each_attr])
-    
-    for each_attr in attributes:
-        plt.plot(xs, ys[each_attr])
-    
-    plt.legend(attributes)
-    plt.show()        
-
-
 def history_min(history, attribute):
     """Get the iterations that has lowest `attribute` value
 
@@ -112,14 +67,43 @@ def history_min(history, attribute):
         [float]: the minimum `attribute` value
         [int]: the iteration value
     """
-    iteration_attr = 'itr'
-    min_attr = float('inf')
-    matched_iteration = None
-
-    for each_history in history:
-        if each_history[attribute] < min_attr:
-            min_attr = each_history[attribute]
-            matched_iteration = each_history[iteration_attr]
+    xs = np.asarray(list(map(lambda obj: obj['itr'], history)),dtype=np.float32)
+    ys = np.asarray(list(map(lambda obj: obj[attribute], history)),
+        dtype=np.float32)
+    min_values = np.argmin(ys, axis=0)
     
-    return min_attr, matched_iteration
+    try:
+        min_values = list(min_values)
+        return [(ys[each][idx].item(), xs[each])
+            for idx, each in enumerate(min_values)]
+    except TypeError:
+        min_values = [min_values]
+        return [(ys[each].item(), xs[each]) for each in min_values]
+
+
+def history_max(history, attribute):
+    """Get the iterations that has highest `attribute` value
+
+    # Arguments
+        history [list of objs]: list of historical measurements
+        attribute [str or list of strs]: the attribute to draw on
+
+    # Returns
+        [float]: the maximum `attribute` value
+        [int]: the iteration value
+    """
+    xs = np.asarray(list(map(lambda obj: obj['itr'], history)),dtype=np.float32)
+    ys = np.asarray(list(map(lambda obj: obj[attribute], history)),
+        dtype=np.float32)
+    max_values = np.argmax(ys, axis=0)
+    
+    try:
+        max_values = list(max_values)
+        return [(ys[each][idx].item(), xs[each]) 
+            for idx, each in enumerate(max_values)]
+    except TypeError:
+        max_values = [max_values]
+        return [(ys[each].item(), xs[each]) for each in max_values]
+
+
 

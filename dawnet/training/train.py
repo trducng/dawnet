@@ -106,6 +106,7 @@ class BaseJob(abc.ABC):
         """Get a batch of data"""
         pass
 
+
 class ImageClassificationJob(BaseJob):
     """A training job
 

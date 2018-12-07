@@ -1,11 +1,15 @@
 # Basic interface for a model
 # @author: John
 # ==============================================================================
+import os
 import time
+import warnings
 
+import torch
 import torch.nn as nn
 
 from dawnet.models.convs import DenseUnit
+from dawnet.training.hyper import SuperConvergence
 from dawnet.utils.dependencies import get_pytorch_layers
 
 
@@ -89,7 +93,7 @@ class _BaseModel(nn.Module):
 
     def get_number_parameters(self, verbose=False):
         """Get the number of parameters
-        
+
         # Arguments
             verbose [bool]: whether to print in human easily readable format
         """
@@ -142,9 +146,52 @@ class BaseModel(_BaseModel):
         # dropout layers are considered valid
         self.convs = nn.Sequential()
 
+        # training optimizer
+        self.optimizer = None
+
+        # super-convergence flag, activate with `self.super_converge()`
+        self.super_converge_flag = False
+        self.super_converge_ensemble_folder = None
+
+        # progress history
+        self.history = []
+
+        # denote current training iteration
+        self.training_iteration = 0
+
     def _forward_conv(self, x):
         """Make the forward pass for the convolution group"""
         return self.convs(x)
+
+    def _get_progress(self):
+        """Get the training progress"""
+        progress = self.get_progress()
+        progress['itr'] = self.training_iteration
+
+        if len(self.history) > 0 and progress['itr'] == self.history[-1]['itr']:
+            return
+
+        self.history.append(progress)
+
+    def _get_save_state(self):
+        """Get the save state and collect other minor information"""
+        self._get_progress()
+
+        state = self.get_save_state()
+
+        state['name'] = self.name
+        state['model'] = self.__class__.__name__
+        state['history'] = self.history
+        state['state_dict'] = self.state_dict()
+        state['super_converge_flag'] = self.super_converge_flag
+        state['training_iteration'] = self.training_iteration
+
+        if self.super_converge_flag:
+            state['lr_scheduler'] = self.lr_scheduler.state_dict()
+            state['super_converge_ensemble_folder'] = (
+                self.super_converge_ensemble_folder)
+
+        return state
 
     # Conv architectures
     def construct_vgg_block(self, in_channels, out_channels, n_layers,
@@ -273,6 +320,39 @@ class BaseModel(_BaseModel):
 
         return block, out_channels
 
+    # Training helper
+    def super_converge(self, max_lr, base_lr, stepsize, patience, omega,
+        better_as_larger, optimizer=None, ensemble_folder=None):
+        """Enable super-convergence learning
+
+        # Arguments
+            optimizer [torch optim]: the optimization object
+            ensemble_folder [str]: the folder to save ensemble checkpoints
+                If None, then it will be in the current directory
+        """
+        if self.super_converge_flag:
+            warnings.warn('`super_converge_flag` is already True, skip...')
+
+        self.super_converge_flag = True
+        
+        # folder
+        ensemble_folder = '.' if ensemble_folder is None else ensemble_folder
+        self.super_converge_ensemble_folder = ensemble_folder
+
+        # optimizer
+        optimizer = self.optimizer if optimizer is None else optimizer
+
+        def save_model():
+            self.x_save(ensemble_folder, other_name=self.training_iteration)
+
+        self.lr_scheduler = SuperConvergence(
+            optimizer=optimizer, max_lr=max_lr, base_lr=base_lr,
+            stepsize=stepsize, patience=patience, omega=omega,
+            better_as_larger=False)
+    
+        self.lr_scheduler.add_save_model(save_model)
+        print('Super-convergence set up.')
+
     # Weights initialization scheme
     def weight_bias_init(self, layer):
         """Initialize the layers using common best-practices
@@ -307,6 +387,74 @@ class BaseModel(_BaseModel):
         # @TODO: some weights and biases are untouched
         self.apply(self.weight_bias_init)
 
+    def x_load(self, path):
+        """Load the saved model
+
+        # Arguments
+            path [str]: the path to saved model
+        """
+        print('Loading from {}...'.format(path))
+        state = torch.load(path)
+
+        # call user-defined updates
+        self.load_dict(state)
+
+        if state['model'] != self.__class__.__name__:
+            print(':WARNING: incompatible model, this is {} but load {}'
+                .format(self.__class__.__name__, state['model']))
+
+        self.name = state['name']
+        self.history = state['history']
+        self.load_state_dict(state['state_dict'])
+        self.training_iteration = state['training_iteration']
+        self.super_converge_flag = state['super_converge_flag']
+
+        if self.super_converge_flag:
+            self.super_converge_flag = False
+
+            self.super_converge_ensemble_folder = (
+                state['super_converge_ensemble_folder'])
+            self.super_converge(
+                max_lr=10, base_lr=4, stepsize=10,
+                patience=10, omega=0.1, better_as_larger=True,  # dummy variable
+                ensemble_folder=state['super_converge_ensemble_folder'])
+            self.lr_scheduler.load_state_dict(state['lr_scheduler'])
+
+            self.super_converge_flag = True
+
+    def x_save(self, outpath, other_name=None):
+        """Save the agent's state"""
+        state = self._get_save_state()
+
+        filepath = (
+            os.path.join(outpath, '{}.john'.format(self.name))
+            if other_name is None
+            else os.path.join(outpath,'{}_{}.john'.format(self.name,other_name))
+        )
+
+        try:
+            torch.save(state, filepath)
+        except KeyboardInterrupt as e:
+            to_kill = input('Currently saving state, killing now might '
+                'destroy all results. Kill? [y/N]: ')
+            if to_kill.lower() != 'y':
+                torch.save(state,
+                           os.path.join(outpath, '{}.john'.format(self.name)))
+            else:
+                raise e
+
+    # must subclasses
+    def get_save_state(self):
+        """Get the dictionary state to save to file"""
+        raise NotImplementedError('`get_save_state` should be subclassed')
+
+    def get_progress(self):
+        """Get the history"""
+        raise NotImplementedError('`collect_history` should be subclassed')
+
+    def load_dict(self, state):
+        """Load user-defined variables from a Pytorch state_dict"""
+        raise NotImplementedError('`load_dict` should be implemented')
 
 class DataParallel(nn.DataParallel):
     """
@@ -328,11 +476,11 @@ class DataParallel(nn.DataParallel):
     def get_layer_indices(self, *args, **kwargs):
         """Get indices of specific type of layer"""
         return self.module.get_layer_indices(*args, **kwargs)
-    
+
     def get_layer(self, *args, **kwargs):
         """Retrieve a layer"""
         return self.module.get_layer(*args, **kwargs)
-    
+
     def get_number_layers(self, *args, **kwargs):
         """Get number of layers"""
         return self.module.get_number_layers(*args, **kwargs)
