@@ -153,7 +153,7 @@ Then, in order to obtain the image, they maximize the output activation of:
 
 |Start Date|End Date  |
 |----------|----------|
-|2018-12-05|2018-12-06|
+|2018-12-05|2018-12-08|
 
 ## Description
 
@@ -180,7 +180,7 @@ ___/__________\/__________\/__________\__base_lr
 - The `max_lr`, `base_lr` value can be determined in 2 ways:
     + Increase the learning rate gradually, choose the learning rate inducing increasing accuracy as `base_lr`, choose the learning rate marking the degradation as `max_lr`
     + If you know the converging learning rate, set `max_lr` = 2 * that learning rate, and `base_lr` = `max_lr` / 4
-- The `stepsize` value is 2 to 10 times the epoch.
+- The `stepsize` value is 2 to 10 times the epoch. Preliminary experiments confirm this experiment, for a training size of 80 000, batch size 2, the training iteration 90 000 (actually 1st epoch) provides much better prediction, than model of earlier iteration.
 
 The second paper (super-convergence) provides:
 - The `max_lr`, `base_lr` value can be determined with increasing the learning rate gradually, choose the learning rate marking degradation as `max_lr`, and divide this number by 3 or 4 to obtain the `base_lr`
@@ -221,6 +221,16 @@ Variation:
 
 In order to create super-convergence, we need: `max_lr`, `base_lr`, `stepsize`, `current_iteration`, and a signal to know when training needs to stabelize, and when training is stabelize, how to handle learning rate. In the mean time, this can be accomplished by manual intervention, and the learning rate is reduced stepwise (or with other traditional learning rate scheduler methods).
 
+A learning rate finder function would require:
+- min_lr
+- max_lr
+- decay_steps
+- num_iterations
+- model that has `x_learn` and `x_evaluate`
+- optimizer object inside model (to change the learning rate)
+- data generator
+- higher_better
+
 
 ## Deliverables
 
@@ -228,5 +238,7 @@ In order to create super-convergence, we need: `max_lr`, `base_lr`, `stepsize`, 
 - [x] `diagnose/vis.py:draw_history`: visualize learning rate (requires combining multiple plot, requires set appropriate default height and width)
 - [x] `training/hyper.py:SuperConvergence`, `models/perceive.py:BaseModel`: save the scheduler into checkpoint
 - [x] `training/hyper.py:SuperConvergence`, `models/perceive.py:BaseModel`: save seperate checkpoints when the learning rate is at the lowest
-- [] learning rate finder
-
+- [x] `models/base.py:batch_infer`: ensemble inference
+- [-] ~~validation loss and accuracy during training in order to save best model, these values should also be contained inside the history progress~~ (this requirement is too specific to incorporate into BaseModel - the numbers and kinds of metrics to monitored change depending on project)
+- [x] `training.hyper.py:lr_finder`: learning rate finder
+- [] DataParallel - automatically add callable functions and variables of `self.module` to `DataParallel

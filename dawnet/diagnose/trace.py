@@ -232,7 +232,7 @@ def get_feature_maps(model, X):
     # Arguments
         model [torch.nn.Module]: the model
         X [torch.Tensor]: a valid input to the model
-    
+
     # Returns
         [list of tuples of 3]: the feature maps (idx, layer class, np output)
     """
@@ -246,10 +246,10 @@ def get_feature_maps(model, X):
             type(layer) not in get_pytorch_layers(conv=True)):
             # stop when stepping into classifiers
             break
-        
+
         X = layer(X)
         result.append((idx, type(layer), X.cpu().data.numpy()))
-    
+
     return result
 
 
@@ -260,7 +260,7 @@ def get_most_activated_outputs(tensor, channel_dim=1, channel_idx=None):
         - must be larger than 0
         - must be at the 75th-quartile
         - must have normalized value be above of 50%
-    
+
     @NOTE: the conditions above does not talk about absolute value.
 
     # Arguments
@@ -306,14 +306,14 @@ def collect_image_patches_for_neuron_activation(layer_idx, indices, model, X):
             represented by y and x indices (0-counting)
         model [torch nn.Module]: the model in a layer representation.
         X [torch.Tensor]: a valid input to the model
-    
+
     # Returns
         [tuple of 4 ints]: top, bottom, left, right
     """
     output_map = run_partial_model(model, layer_idx, X)
     result = trace(layer_idx, indices, tuple(output_map.shape[2:]), model)
     top, bottom, left, right = get_rectangle_vertices(result)
-    
+
     return top, bottom, left, right
 
 
@@ -326,7 +326,7 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
             find the most activated outputs
         model [torch nn.Module]: the model in a layer representation.
         X [torch.Tensor]: a valid input to the model
-    
+
     # Returns
         [list of nd arrays]: list of images
         [nd array]: the mask corresponding to the patches
@@ -376,18 +376,18 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
     tensor = tensor.squeeze()
     if len(tensor.shape) == 2:
         tensor = np.expand_dims(tensor, 0)
-    
+
     if len(tensor.shape) != 3:
         raise AttributeError('the tensor should be 3D shape, get {}'
             .format(len(tensor.shape)))
-    
+
     max_rows, max_columns = get_subplot_rows_cols(tensor)
     step = max_rows * max_columns
 
     if construct_widget:
         fig = plt.figure()
     else:
-        fig = plt.figure(figsize=(8, 8))        
+        fig = plt.figure(figsize=(8, 8))
 
     def show_images(page=0):
         """Show the image in `tensor`
@@ -406,11 +406,11 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
             plot.set_title('{}'.format(_idx + page*step))
             plot.axis('off')
             plot.imshow(each_img, cmap='gray')
-        
+
         plt.subplots_adjust(
             left=0, right=1, top=1, bottom=0, wspace=0.01, hspace=0.01)
         fig.show()
-    
+
     if not construct_widget:
         return show_images
 
@@ -425,7 +425,7 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
 def view_feature_maps(model, X):
     """View model feature maps"""
     feature_maps = get_feature_maps(model, X)
-    
+
     fig = plt.figure()
     def show_images(layer=0, page=0):
         """Show the image in `tensor`
@@ -451,18 +451,18 @@ def view_feature_maps(model, X):
             plot.set_title('{}'.format(_idx + page*step))
             plot.axis('off')
             plot.imshow(each_img, cmap='gray')
-        
+
         plt.subplots_adjust(
             left=0, right=1, top=0.9, bottom=0, wspace=0.01, hspace=0.01)
         fig.show()
-    
+
     def update_num_pages(*args):
         """Change the number of pages as the layer changes"""
         layer = layer_slider.value
         tensor = feature_maps[layer][2][0,:]
         page_slider.max = math.ceil(tensor.shape[0] // np.prod(
             get_subplot_rows_cols(tensor)) - 1)
-    
+
     tensor = feature_maps[0][2][0,:]
     layer_slider = widgets.IntSlider(
         min=0, max=len(feature_maps) - 1, step=1, value=0,
@@ -474,7 +474,7 @@ def view_feature_maps(model, X):
         step=1, value=0, description='Page:', layout=Layout(width='75%'))
     layer_slider.observe(update_num_pages, 'value')
     interact_manual(show_images, layer=layer_slider, page=page_slider)
-    
+
     return show_images
 
 
@@ -484,7 +484,7 @@ def changing_input_view_feature_channel(image, model, layer_idx=None,
 
     Currently this function supports: blur, italicize, noise, rotation,
     padding, perspective transform, elastic transform, brightness
-    
+
     @NOTE: it should support:
     - random background
     - cropping
@@ -543,7 +543,7 @@ def changing_input_view_feature_channel(image, model, layer_idx=None,
             image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
 
         # retrieve the feature map
-        layer = layer if layer_idx is None else layer_idx            
+        layer = layer if layer_idx is None else layer_idx
         feature_map = run_partial_model(model, layer, image_torch)
         feature_map = feature_map.squeeze().cpu().data.numpy()
 
@@ -559,7 +559,7 @@ def changing_input_view_feature_channel(image, model, layer_idx=None,
 
             plot = fig.add_subplot(rows+1, columns, ((rows+1) *columns)-1)
             plot.imshow(image_new, cmap='gray')
-        
+
         # case where viewing only 1 channel in a layer
         else:
             plot = fig.add_subplot('211')
@@ -591,7 +591,7 @@ def changing_input_view_feature_channel(image, model, layer_idx=None,
         feature_map = run_partial_model(model, layer_slider.value, image_torch)
         max_page = feature_map.shape[1] // 15
         page_slider.max = max_page
-    
+
     # sliders containing blur
     blur_type = widgets.Dropdown(
         options=[('N/A', 0), ('Gaussian', 1), ('Average', 2), ('Median', 3)],

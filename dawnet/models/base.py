@@ -1,11 +1,59 @@
 # Counting FLOPS operation
 # @author: credit to @warmspringwinds and @sovrasov
 # =============================================================================
-import pdb
+import glob
+import os
+from collections import defaultdict
 
 import torch.nn as nn
 import torch
 import numpy as np
+
+
+
+def get_ensembles(folder_path):
+    """Get the ensemble model
+    
+    # Arguments
+        [folder_path]: the folder containing all models
+    
+    # Returns
+        [list of str]: list of checkpoint paths
+    """
+    model_paths = glob.glob(os.path.join(folder_path, '*.john'))
+    model_paths.sort(
+        key=lambda path: int(
+            os.path.splitext(os.path.basename(path))[0].split('_')[2]))
+    return model_paths
+
+
+def batch_infer(models, X, debug=False):
+    """Batch infer using a collection of models
+    
+    # Arguments
+        models [list of perceive.BaseModel]: list of models that have `x_infer`
+        X [consumable by `x_infer`]: an input data
+        debug [bool]: whether to return debug information (answer counts, 
+            answer list)
+    """
+    answers = defaultdict(int)
+    _answers = []
+    for each_model in models:
+        answer = each_model.x_infer(X)
+        answers[answer] += 1
+        _answers.append(answer)
+
+    most_common = max(list(answers.values()))
+    common_answers = [
+        answer for answer, count in answers.items() if count == most_common]
+
+    # random break-even
+    if debug:
+        return (
+           common_answers[np.random.choice(len(common_answers))],
+           (answers, _answers) 
+        )
+    return common_answers[np.random.choice(len(common_answers))]
 
 
 def flops_to_string(flops):

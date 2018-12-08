@@ -13,6 +13,7 @@ from dawnet.training.hyper import SuperConvergence
 from dawnet.utils.dependencies import get_pytorch_layers
 
 
+
 class _BaseModel(nn.Module):
     """Base class provides perception interface
 
@@ -133,6 +134,10 @@ class _BaseModel(nn.Module):
     def x_test(self, *args, **kwargs):
         """Perform testing"""
         raise NotImplementedError('x_test` should be subclassed')
+
+    def x_validate(self, *args, **kwargs):
+        """Performance testing"""
+        raise NotImplementedError('`x_validate` should be subclassed')
 
 
 class BaseModel(_BaseModel):
@@ -334,7 +339,7 @@ class BaseModel(_BaseModel):
             warnings.warn('`super_converge_flag` is already True, skip...')
 
         self.super_converge_flag = True
-        
+
         # folder
         ensemble_folder = '.' if ensemble_folder is None else ensemble_folder
         self.super_converge_ensemble_folder = ensemble_folder
@@ -349,7 +354,7 @@ class BaseModel(_BaseModel):
             optimizer=optimizer, max_lr=max_lr, base_lr=base_lr,
             stepsize=stepsize, patience=patience, omega=omega,
             better_as_larger=False)
-    
+
         self.lr_scheduler.add_save_model(save_model)
         print('Super-convergence set up.')
 
@@ -456,6 +461,7 @@ class BaseModel(_BaseModel):
         """Load user-defined variables from a Pytorch state_dict"""
         raise NotImplementedError('`load_dict` should be implemented')
 
+
 class DataParallel(nn.DataParallel):
     """
     Subclass the data parallel to allow agent operation in parallel GPU settings
@@ -525,3 +531,7 @@ class DataParallel(nn.DataParallel):
     def x_test(self, *args, **kwargs):
         """Perform testing"""
         return self.module.x_test(*args, **kwargs)
+
+    def x_validate(self, *args, **kwargs):
+        """Perform validation"""
+        return self.module.x_validate(*args, **kwargs)

@@ -5,13 +5,49 @@ import warnings
 
 import numpy as np
 import torch.optim as optim
+from tqdm import tqdm
 
 from dawnet.utils.exceptions import FinishTrainingException
 
 
-def lr_finder(model, dataloader, max_lr=10):
-    """Find the learning rate, using 2015 CLR paper"""
-    pass
+def lr_finder(model, generator, optimizer, key=lambda obj: obj, min_lr=0.0001,
+    max_lr=5, n_steps=20, n_iterations=200):
+    """Find the learning rate, using 2015 CLR paper
+
+    # Arguments
+        model [model object]: a model object that has the `x_learn` and
+            `x_validate` methods
+        generator [data generator]: a generator consumed by `model`'s `x_learn`
+            and `x_validate`
+        optimizer [torch optim]: the optimizer object to train `model`
+        key [function]: the validate function might return a lot of items,
+            the `key` function will be used to retrieve the appropriate metric
+            keys
+        min_lr [float]: the min learning rate to test
+        max_lr [float]: the max learning rate to test
+        n_steps [int]: the number of learning rate steps between `min_lr`
+            and `max_lr`
+        n_iterations [int]: the number of training iterations for each learning
+            rate
+
+    # Returns
+        [list of tuple of 2 floats]: the learning rate and metrics
+    """
+    result = []
+    lrs = tqdm(list(np.linspace(min_lr, max_lr, n_steps)), desc='LR')
+    for each_lr in lrs:
+        lrs.set_description(desc='LR {:.4f}'.format(each_lr), refresh=True)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = each_lr
+
+        model.train()
+        for _ in range(n_iterations):
+            _ = model.x_learn(generator)
+
+        metric = key(model.x_validate(generator))
+        result.append((each_lr, metric))
+
+    return result
 
 
 class SuperConvergence(optim.lr_scheduler._LRScheduler):

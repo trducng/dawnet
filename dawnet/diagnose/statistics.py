@@ -18,7 +18,7 @@ def normalize_to_range(nd_array, min_value=0, max_value=255):
         nd_array [nd array]: the original array
         min_value [int]: the minimum value (default to 0)
         max_vaue [int]: the maximum value (default to 255)
-    
+
     # Returns
         [nd array]: the normalized array
     """
@@ -26,13 +26,13 @@ def normalize_to_range(nd_array, min_value=0, max_value=255):
 
     nd_array = (
         (max_value - min_value)
-        * (nd_array - current_min) / (current_max - current_min) 
+        * (nd_array - current_min) / (current_max - current_min)
         + min_value)
 
     if np.max(nd_array) < 256 and np.min(nd_array) >= 0:
         # normalize into image range is a very normal case
         nd_array = nd_array.astype(np.uint8)
-    
+
     return nd_array
 
 
@@ -40,10 +40,10 @@ def get_statistics(nd_array):
     """Calculate the array statistics
 
     Currently return the mean, median and standard deviation
-    
+
     # Arguments
-        nd_array [nd array]: the array to get statistics 
-    
+        nd_array [nd array]: the array to get statistics
+
     # Returns
         [tuple of floats]: arithmetic mean, median, std, max, min
     """
@@ -52,7 +52,7 @@ def get_statistics(nd_array):
     std = np.std(nd_array)
     max_value = np.max(nd_array)
     min_value = np.min(nd_array)
-    
+
     return mean, median, std, max_value, min_value
 
 
@@ -71,7 +71,7 @@ def history_min(history, attribute):
     ys = np.asarray(list(map(lambda obj: obj[attribute], history)),
         dtype=np.float32)
     min_values = np.argmin(ys, axis=0)
-    
+
     try:
         min_values = list(min_values)
         return [(ys[each][idx].item(), xs[each])
@@ -96,14 +96,11 @@ def history_max(history, attribute):
     ys = np.asarray(list(map(lambda obj: obj[attribute], history)),
         dtype=np.float32)
     max_values = np.argmax(ys, axis=0)
-    
+
     try:
         max_values = list(max_values)
-        return [(ys[each][idx].item(), xs[each]) 
+        return [(ys[each][idx].item(), xs[each])
             for idx, each in enumerate(max_values)]
     except TypeError:
         max_values = [max_values]
         return [(ys[each].item(), xs[each]) for each in max_values]
-
-
-
