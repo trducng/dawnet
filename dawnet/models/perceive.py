@@ -1,6 +1,6 @@
 # Basic interface for a model
 # @author: John
-# ==============================================================================
+# =============================================================================
 import os
 import time
 import warnings
@@ -11,7 +11,6 @@ import torch.nn as nn
 from dawnet.models.convs import DenseUnit
 from dawnet.training.hyper import SuperConvergence
 from dawnet.utils.dependencies import get_pytorch_layers
-
 
 
 class _BaseModel(nn.Module):
@@ -37,7 +36,10 @@ class _BaseModel(nn.Module):
         self._x_forward = self.__call__
 
         # get the name
-        self.name = str(int(time.time())) if not isinstance(name, str) else name
+        self.name = (
+            str(int(time.time()))
+            if not isinstance(name, str)
+            else name)
         self.name = '{}_{}'.format(self.__class__.__name__, self.name)
 
     def switch_forward_function(self, forward_fn=None):
@@ -157,6 +159,7 @@ class BaseModel(_BaseModel):
         # super-convergence flag, activate with `self.super_converge()`
         self.super_converge_flag = False
         self.super_converge_ensemble_folder = None
+        self.lr_scheduler = None
 
         # progress history
         self.history = []
@@ -173,7 +176,7 @@ class BaseModel(_BaseModel):
         progress = self.get_progress()
         progress['itr'] = self.training_iteration
 
-        if len(self.history) > 0 and progress['itr'] == self.history[-1]['itr']:
+        if self.history and progress['itr'] == self.history[-1]['itr']:
             return
 
         self.history.append(progress)
@@ -272,7 +275,7 @@ class BaseModel(_BaseModel):
         return block
 
     def construct_dense_block(self, in_channels, growth_rate, n_units,
-        name='dense_unit'):
+                              name='dense_unit'):
         """Construct the dense block
 
         # Arguments
@@ -353,7 +356,7 @@ class BaseModel(_BaseModel):
         self.lr_scheduler = SuperConvergence(
             optimizer=optimizer, max_lr=max_lr, base_lr=base_lr,
             stepsize=stepsize, patience=patience, omega=omega,
-            better_as_larger=False)
+            better_as_larger=better_as_larger)
 
         self.lr_scheduler.add_save_model(save_model)
         print('Super-convergence set up.')
@@ -405,7 +408,8 @@ class BaseModel(_BaseModel):
         self.load_dict(state)
 
         if state['model'] != self.__class__.__name__:
-            print(':WARNING: incompatible model, this is {} but load {}'
+            print(
+                ':WARNING: incompatible model, this is {} but load {}'
                 .format(self.__class__.__name__, state['model']))
 
         self.name = state['name']
@@ -421,7 +425,7 @@ class BaseModel(_BaseModel):
                 state['super_converge_ensemble_folder'])
             self.super_converge(
                 max_lr=10, base_lr=4, stepsize=10,
-                patience=10, omega=0.1, better_as_larger=True,  # dummy variable
+                patience=10, omega=0.1, better_as_larger=True,  # dummy var
                 ensemble_folder=state['super_converge_ensemble_folder'])
             self.lr_scheduler.load_state_dict(state['lr_scheduler'])
 
@@ -434,19 +438,21 @@ class BaseModel(_BaseModel):
         filepath = (
             os.path.join(outpath, '{}.john'.format(self.name))
             if other_name is None
-            else os.path.join(outpath,'{}_{}.john'.format(self.name,other_name))
+            else os.path.join(
+                outpath, '{}_{}.john'.format(self.name, other_name))
         )
 
         try:
             torch.save(state, filepath)
-        except KeyboardInterrupt as e:
-            to_kill = input('Currently saving state, killing now might '
+        except KeyboardInterrupt as error:
+            to_kill = input(
+                'Currently saving state, killing now might '
                 'destroy all results. Kill? [y/N]: ')
             if to_kill.lower() != 'y':
                 torch.save(state,
                            os.path.join(outpath, '{}.john'.format(self.name)))
             else:
-                raise e
+                raise error
 
     # must subclasses
     def get_save_state(self):
@@ -464,7 +470,8 @@ class BaseModel(_BaseModel):
 
 class DataParallel(nn.DataParallel):
     """
-    Subclass the data parallel to allow agent operation in parallel GPU settings
+    Subclass the data parallel to allow agent operation in parallel GPU
+    settings
 
     The behavior of this class is to:
         - Pass the _x_ calls from `nn.DataParallel` into the wrapped object
@@ -478,6 +485,74 @@ class DataParallel(nn.DataParallel):
 
         # let the driver know that it is wrapped by DataParallel
         self.module.switch_forward_function(self.__call__)
+
+        # this attribute should be placed last in `__init__` as it sinifies
+        # that instance is basically fully initiated
+        self._fully_initialized = True
+
+    def __getattr__(self, name):
+        """Get the object and `module`'s attributes
+
+        The `__getattr__` method will be called if the attribute does not
+        exist, so that another fallback way can be used to access the
+        attribute.
+
+        # Arguments
+            name [str]: the name an attribute to be deleted
+        """
+        if '_fully_initialized' not in self.__dict__:
+            return super(DataParallel, self).__getattr__(name)
+
+        try:
+            # check for _parameters, _buffers, _modules in nn.Module first
+            return super(DataParallel, self).__getattr__(name)
+        except AttributeError:
+            # now we sure that this instance does not have 'name' attribute
+            return getattr(self.module, name)
+
+    def __setattr__(self, name, value):
+        """Set object attribute or module's attribute
+
+        # Arguments
+            name [str]: the name of the attribute to be set
+            value [object]: the corresponding value of the `name` attribute
+        """
+        if '_fully_initialized' not in self.__dict__:
+            # the object is not fully initialized, so any set attribute
+            # attempt is to set to the object, not the `module`
+            return super(DataParallel, self).__setattr__(name, value)
+
+        if name in self.__dir__():
+            # if the instance contains `name`, then this will modify that
+            # attribute
+            return super(DataParallel, self).__setattr__(name, value)
+
+        if 'module' not in self.__dict__:
+            # ignore the non-existence `module` object
+            return super(DataParallel, self).__setattr__(name, value)
+
+        if name not in self.module.__dir__():
+            # if `module` does not contain attribute `name`, then this will
+            # be thought of as setting this instance's attribute
+            return super(DataParallel, self).__setattr__(name, value)
+
+        return setattr(self.module, name, value)
+
+    def __delattr__(self, name):
+        """Delete an attribute
+
+        # Arguments
+            name [str]: the name an attribute to be deleted
+        """
+        if '_fully_initialized' not in self.__dict__:
+            super(DataParallel, self).__delattr__(name)
+
+        try:
+            # check for _parameters, _buffers, _modules in nn.Module first
+            return super(DataParallel, self).__delattr__(name)
+        except AttributeError:
+            # now we sure that this instance does not have 'name' attribute
+            return self.module.__delattr__(name)
 
     def get_layer_indices(self, *args, **kwargs):
         """Get indices of specific type of layer"""

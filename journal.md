@@ -241,4 +241,4 @@ A learning rate finder function would require:
 - [x] `models/base.py:batch_infer`: ensemble inference
 - [-] ~~validation loss and accuracy during training in order to save best model, these values should also be contained inside the history progress~~ (this requirement is too specific to incorporate into BaseModel - the numbers and kinds of metrics to monitored change depending on project)
 - [x] `training.hyper.py:lr_finder`: learning rate finder
-- [] DataParallel - automatically add callable functions and variables of `self.module` to `DataParallel
+- [x] `models/perceive.py:DataParallel`: DataParallel - automatically add callable functions and variables of `self.module` to `DataParallel

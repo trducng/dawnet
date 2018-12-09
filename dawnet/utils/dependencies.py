@@ -7,10 +7,10 @@ import sys
 
 from IPython.display import Markdown, display
 import torch
-import torch.nn
+import torch.nn as nn
 
 
-## Listing of Pytorch modules
+# Listing of Pytorch modules
 MODULES = [
     torch.nn.modules.conv,
     torch.nn.modules.linear,
@@ -34,7 +34,7 @@ SKIP_LAYERS = set([
     torch.nn.parameter.Parameter
 ])
 
-## All valid Pytorch layers
+# All valid Pytorch layers
 VALID_LAYERS = []
 for each_module in MODULES:
     for _, obj in inspect.getmembers(each_module):
@@ -42,7 +42,7 @@ for each_module in MODULES:
             VALID_LAYERS.append(obj)
 VALID_LAYERS = set(VALID_LAYERS).difference(SKIP_LAYERS)
 
-## All valid Pytorch convolutional layers
+# All valid Pytorch convolutional layers
 VALID_CONV_LAYERS = []
 for each_module in CONV_MODULES:
     for _, obj in inspect.getmembers(each_module):
