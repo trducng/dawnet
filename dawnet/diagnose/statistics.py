@@ -1,35 +1,38 @@
-# Calculate common statistics
-# @author: _john
-# ==============================================================================
-import os
-from collections import defaultdict
-
+"""Calculate common statistics
+@author: _john
+"""
 import numpy as np
 
 
-def normalize_to_range(nd_array, min_value=0, max_value=255):
+def normalize_to_range(nd_array, min_value=0, max_value=255,
+                       current_range=None):
     """Normalize the array to hold value in certain range
 
     This function is handy to normalize an image into image range so that it
-    can be viewed visually (that's reason default of min value and max value are
-    0 and 255 respectively).
+    can be viewed visually (that's reason default of min value and max value
+    are 0 and 255 respectively).
 
     # Arguments
         nd_array [nd array]: the original array
-        min_value [int]: the minimum value (default to 0)
-        max_vaue [int]: the maximum value (default to 255)
+        min_value [int]: the minimum value to stretch (default to 0)
+        max_vaue [int]: the maximum value to stretch (default to 255)
+        range [tuple of 2 floats]: the actual min and max value, if None,
+            then it will be `np.min`, `np.max` of `nd_array`
 
     # Returns
         [nd array]: the normalized array
     """
-    current_max, current_min = np.max(nd_array), np.min(nd_array)
+    if current_range is None:
+        current_min, current_max = np.min(nd_array), np.max(nd_array)
+    else:
+        current_min, current_max = current_range
 
     nd_array = (
         (max_value - min_value)
         * (nd_array - current_min) / (current_max - current_min)
         + min_value)
 
-    if np.max(nd_array) < 256 and np.min(nd_array) >= 0:
+    if min_value == 0 and max_value == 255:
         # normalize into image range is a very normal case
         nd_array = nd_array.astype(np.uint8)
 
@@ -67,14 +70,16 @@ def history_min(history, attribute):
         [float]: the minimum `attribute` value
         [int]: the iteration value
     """
-    xs = np.asarray(list(map(lambda obj: obj['itr'], history)),dtype=np.float32)
+    xs = np.asarray(list(map(lambda obj: obj['itr'], history)),
+                    dtype=np.float32)
     ys = np.asarray(list(map(lambda obj: obj[attribute], history)),
-        dtype=np.float32)
+                    dtype=np.float32)
     min_values = np.argmin(ys, axis=0)
 
     try:
         min_values = list(min_values)
-        return [(ys[each][idx].item(), xs[each])
+        return [
+            (ys[each][idx].item(), xs[each])
             for idx, each in enumerate(min_values)]
     except TypeError:
         min_values = [min_values]
@@ -92,14 +97,16 @@ def history_max(history, attribute):
         [float]: the maximum `attribute` value
         [int]: the iteration value
     """
-    xs = np.asarray(list(map(lambda obj: obj['itr'], history)),dtype=np.float32)
+    xs = np.asarray(list(map(lambda obj: obj['itr'], history)),
+                    dtype=np.float32)
     ys = np.asarray(list(map(lambda obj: obj[attribute], history)),
-        dtype=np.float32)
+                    dtype=np.float32)
     max_values = np.argmax(ys, axis=0)
 
     try:
         max_values = list(max_values)
-        return [(ys[each][idx].item(), xs[each])
+        return [
+            (ys[each][idx].item(), xs[each])
             for idx, each in enumerate(max_values)]
     except TypeError:
         max_values = [max_values]

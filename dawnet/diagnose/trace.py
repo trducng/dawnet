@@ -15,24 +15,17 @@
 #       model
 # @author: _john
 # =============================================================================
-import inspect
 import math
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 from ipywidgets import interact_manual, widgets, Layout
-from scipy import stats
 
-from dawnet.data.image import (
-    augment_image, get_rectangle_vertices, resize,
-    get_subplot_rows_cols)
-from dawnet.data.text import view_string_prediction
+from dawnet.data.image import get_rectangle_vertices, get_subplot_rows_cols
 from dawnet.models.convs import get_conv_input_shape
 from dawnet.utils.dependencies import get_pytorch_layers
-from dawnet.diagnose.statistics import normalize_to_range
 
 
 
@@ -197,7 +190,7 @@ def trace(layer_idx, indices, output_shape, model):
         return trace(layer_idx - 1, indices, output_shape, model)
 
 
-def run_partial_model(model, layer_idx, X):
+def run_partial_model(model, layer_idx, input_x, preprocess=None):
     """Run the model partially
 
     @NOTE: this method might be refactored into the model class. It seems
@@ -209,46 +202,89 @@ def run_partial_model(model, layer_idx, X):
     # Arguments
         model [torch.nn.Module]: the model
         layer_idx [int]: the final layer index to retrieve output
-        X [torch.Tensor]: a valid input to the model
+        input_x [torch.Tensor]: a valid input to the model
+        preprocess [function]: preprocessing function apply for `input_x`
 
     # Returns
         [torch.Tensor]: the output of `layer_idx` when the `model` is fed w/ `X`
     """
-    for idx, (_, layer) in enumerate(model.named_modules()):
-        if type(layer) not in get_pytorch_layers():
+    if preprocess is not None:
+        input_x = preprocess(input_x)
+
+    idx = 0
+    for _, layer in model.named_modules():
+        if not isinstance(layer, tuple(get_pytorch_layers())):
             continue
 
-        X = layer(X)
+        if isinstance(layer, nn.LSTM):
+            input_x = input_x.view(input_x.size(0), input_x.size(1) * input_x.size(2), input_x.size(3))
+            input_x = input_x.transpose(1, 2)
+            input_x = input_x.transpose(0, 1).contiguous()
+            input_x, _ = layer(input_x)
+        else:
+            input_x = layer(input_x)
 
         if idx >= layer_idx:
             break
+        
+        idx += 1
 
-    return X
+    return input_x
 
 
-def get_feature_maps(model, X):
+def predict_partial_model(model, layer_idx, input_x):
+    """Get output logit running partially
+
+    # Arguments
+        model [torch.nn.Module]: the model
+        layer_idx [int]: the starting index
+        input_x [torch.Tensor]: a valid input to the layer
+    
+    # Returns
+        [torch.Tensor]: output logits
+    """
+    idx = 0
+    for _, layer in model.named_modules():
+        if not isinstance(layer, tuple(get_pytorch_layers())):
+            continue
+
+        if idx >= layer_idx:
+            if isinstance(layer, nn.LSTM):
+                input_x = input_x.view(input_x.size(0), input_x.size(1) * input_x.size(2), input_x.size(3))
+                input_x = input_x.transpose(1, 2)
+                input_x = input_x.transpose(0, 1).contiguous()
+                input_x, _ = layer(input_x)
+            else:
+                input_x = layer(input_x)
+        
+        idx += 1
+
+    return input_x
+
+
+def get_feature_maps(model, input_x):
     """Get model feature maps
 
     # Arguments
         model [torch.nn.Module]: the model
-        X [torch.Tensor]: a valid input to the model
+        input_x [torch.Tensor]: a valid input to the model
 
     # Returns
         [list of tuples of 3]: the feature maps (idx, layer class, np output)
     """
     result = []
     for idx, (_, layer) in enumerate(model.named_modules()):
-        if type(layer) not in get_pytorch_layers():
+        if not isinstance(layer, tuple(get_pytorch_layers())):
             # skip for non-Pytorch class
             continue
 
-        if (type(layer) in get_pytorch_layers() and
-            type(layer) not in get_pytorch_layers(conv=True)):
+        if (isinstance(layer, tuple(get_pytorch_layers())) and
+                not isinstance(layer, tuple(get_pytorch_layers(conv=True)))):
             # stop when stepping into classifiers
             break
 
-        X = layer(X)
-        result.append((idx, type(layer), X.cpu().data.numpy()))
+        input_x = layer(input_x)
+        result.append((idx, type(layer), input_x.cpu().data.numpy()))
 
     return result
 
@@ -351,8 +387,8 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
     return results, mask
 
 
-def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
-    construct_widget=True):
+def view_3d_tensor(tensor, max_rows=None, max_columns=None,
+                   construct_widget=True):
     """Visualize 3D tensor by viewing groups of 2D images
 
     This function is used in conjunction with ipywidget. Suppose we have a
@@ -361,7 +397,6 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
 
     # Arguments
         tensor [3D np array or torch tensor]: the 3D tensor to view
-        dim [int]: the dimension to view 2D image (default first dimension)
         max_rows [int]: number of rows of images
         max_columns [int]: number of images to show in each row
         notebook [bool]: whether to view in jupyter notebook
@@ -378,8 +413,8 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
         tensor = np.expand_dims(tensor, 0)
 
     if len(tensor.shape) != 3:
-        raise AttributeError('the tensor should be 3D shape, get {}'
-            .format(len(tensor.shape)))
+        raise AttributeError(
+            'the tensor should be 3D shape, get {}'.format(len(tensor.shape)))
 
     max_rows, max_columns = get_subplot_rows_cols(tensor)
     step = max_rows * max_columns
@@ -423,7 +458,15 @@ def view_3d_tensor(tensor, dim=0, max_rows=None, max_columns=None,
 
 
 def view_feature_maps(model, X):
-    """View model feature maps"""
+    """View model feature maps
+    
+    # Arguments
+        model [torch nn.Module]: the model
+        X [torch Tensor]: a valid input to the model
+
+    # Returns
+        [func]: image showing function for ipywidget interactivity
+    """
     feature_maps = get_feature_maps(model, X)
 
     fig = plt.figure()
@@ -476,190 +519,3 @@ def view_feature_maps(model, X):
     interact_manual(show_images, layer=layer_slider, page=page_slider)
 
     return show_images
-
-
-def changing_input_view_feature_channel(image, model, layer_idx=None,
-    channel_idx=None, label=None, color_bg=None, construct_widget=True):
-    """View the feature map as input changes
-
-    Currently this function supports: blur, italicize, noise, rotation,
-    padding, perspective transform, elastic transform, brightness
-
-    @NOTE: it should support:
-    - random background
-    - cropping
-
-    # Argument
-        image [2D nd array]: the image
-        model [torch.nn.Dawnet]: the dawnet model
-        layer_idx [int]: the layer to view. If None, view all layers
-        channel_idx [int]: the channel to view. If None, view all channels
-        color_bg [int]: the background pixel value (used for interpolation).
-            If None, this value will be the mode value of an image
-        construct_widget [bool]: whether to construct the widget directly
-    """
-    if color_bg is None:
-        color_bg = int(stats.mode(image+128, axis=None).mode.item())
-                                                        # pylint: disable=E1101
-    if next(model.parameters()).is_cuda:
-        image_torch = torch.FloatTensor(image, device=torch.device('cuda:0'))
-        image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
-    else:
-        image_torch = torch.FloatTensor(image)
-        image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
-
-    fig = plt.figure()
-
-    def show_images(layer, page, italicize, angle, pad_vertical, pad_horizontal,
-        pt, elas_alpha, elas_sigma, blur_type, blur_value, brightness,
-        gauss_noise):
-
-        fig.clf()
-
-        # enhance the image
-        image_new = image + 128
-        image_new = augment_image(image=image_new, color_bg=color_bg,
-            italicize=italicize, angle=angle, pad_vertical=pad_vertical,
-            pad_horizontal=pad_horizontal, pt=pt, elas_alpha=elas_alpha,
-            elas_sigma=elas_sigma, blur_type=blur_type, blur_value=blur_value,
-            brightness=brightness, gauss_noise=gauss_noise)
-        image_new = resize(image_new, height=64)
-        image_new_infer = image_new.astype(np.float32) - 128
-        prediction = model.x_infer(image_new_infer)
-
-        if label is None:
-            print('Prediction: {}'.format(prediction))
-        else:
-            print('Ground truth: {} - Prediction: '.format(label), end='')
-            _ = view_string_prediction(prediction, label, to_print=True,
-                                       notebook=True)
-
-        if next(model.parameters()).is_cuda:
-            image_torch = torch.FloatTensor(
-                image_new, device=torch.device('cuda:0'))
-            image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
-        else:
-            image_torch = torch.FloatTensor(image)
-            image_torch = image_torch.unsqueeze(0).unsqueeze(0).cuda()
-
-        # retrieve the feature map
-        layer = layer if layer_idx is None else layer_idx
-        feature_map = run_partial_model(model, layer, image_torch)
-        feature_map = feature_map.squeeze().cpu().data.numpy()
-
-        # case where viewing all channels in a layer
-        if channel_idx is None:
-            image_list = list(feature_map[page*15:(page+1)*15])
-            columns = min(3, len(image_list))
-            rows = math.ceil(len(image_list) / columns)
-
-            for _idx, each_img in enumerate(image_list):
-                plot = fig.add_subplot(rows+1, columns, _idx+1)
-                plot.imshow(each_img, cmap='gray')
-
-            plot = fig.add_subplot(rows+1, columns, ((rows+1) *columns)-1)
-            plot.imshow(image_new, cmap='gray')
-
-        # case where viewing only 1 channel in a layer
-        else:
-            plot = fig.add_subplot('211')
-            plot.imshow(image_new, cmap='gray')
-            plot = fig.add_subplot('212')
-            plot.imshow(feature_map[channel_idx], cmap='gray')
-
-        fig.show()
-
-    if not construct_widget:
-        return show_images
-
-
-    def update_blur_value(*args):
-        """Update the blur range based on the blur type"""
-        if blur_type.value == 1:
-            blur_value.max = 15
-            blur_value.min = 0
-            blur_value.step = 1
-            blur_value.value = 0
-        elif blur_type.value == 2 or blur_type.value == 3:
-            blur_value.max = 7
-            blur_value.min = 1
-            blur_value.step = 2
-            blur_value.value = 1
-
-    def update_num_channels(*args):
-        """Change the number of channels as the layer changes"""
-        feature_map = run_partial_model(model, layer_slider.value, image_torch)
-        max_page = feature_map.shape[1] // 15
-        page_slider.max = max_page
-
-    # sliders containing blur
-    blur_type = widgets.Dropdown(
-        options=[('N/A', 0), ('Gaussian', 1), ('Average', 2), ('Median', 3)],
-        value=0, description='Blur type:', layout=Layout(width='75%'))
-    blur_value = widgets.IntSlider(
-        min=0, max=10, step=1, value=0, description='Blur value:',
-        layout=Layout(width='75%'))
-    blur_type.observe(update_blur_value, 'value')
-
-    # layer/channel relating-slider
-    if layer_idx is not None:
-        layer_slider = widgets.IntSlider(min=0, max=10, step=1, value=0,
-            layout=Layout(visibility='hidden'))
-        if channel_idx is None:
-            feature_map = run_partial_model(model, layer_idx, image_torch)
-            max_page = feature_map.shape[1] // 15
-            page_slider = widgets.IntSlider(min=0, max=max_page,step=1, value=0,
-                description='Channels:', layout=Layout(width='75%'))
-        else:
-            page_slider = widgets.IntSlider(min=0, max=10, step=1, value=0,
-                description='Channels:', layout=Layout(visibility='hidden'))
-    else:
-        layer_slider = widgets.IntSlider(
-            min=0, max=model.get_number_layers(), step=1, value=0,
-            layout=Layout(width='75%'))
-        if channel_idx is None:
-            feature_map = run_partial_model(model, 0, image_torch)
-            max_page = feature_map.shape[1] // 15
-            page_slider = widgets.IntSlider(min=0, max=max_page,step=1, value=0,
-                description='Channels:', layout=Layout(width='75%'))
-            layer_slider.observe(update_num_channels, 'value')
-        else:
-            page_slider = widgets.IntSlider(min=0, max=10, step=1, value=0,
-                description='Channels:', layout=Layout(visibility='hidden'))
-
-    # interactive sliders
-    interact_manual(show_images,
-        layer=layer_slider,
-        page=page_slider,
-        italicize=widgets.FloatSlider(
-            min=-30, max=30, step=0.5, value=0, description='Italicize:',
-            orientation='horizontal', layout=Layout(width='75%')),
-        angle=widgets.FloatSlider(
-            min=-10, max=10, step=0.5, value=0, description='Rotate:',
-            layout=Layout(width='75%')),
-        pad_vertical=widgets.FloatSlider(
-            min=0, max=0.7, step=0.01, value=0, description='Pad (vertical):',
-            layout=Layout(width='75%')),
-        pad_horizontal=widgets.FloatSlider(
-            min=0, max=0.7, step=0.01, value=0, description='Pad (horizontal):',
-            layout=Layout(width='75%')),
-        pt=widgets.FloatSlider(
-            min=0, max=0.3, step=0.02, value=0, description='Perspective:',
-            layout=Layout(width='75%')),
-        elas_alpha=widgets.FloatSlider(
-            min=0, max=1.0, step=0.05, value=0, description='Elastic (alpha):',
-            layout=Layout(width='75%')),
-        elas_sigma=widgets.FloatSlider(
-            min=0.4, max=0.6, step=0.05, value=0.4,
-            description='Elastic (sigma)', layout=Layout(width='75%')),
-        blur_type=blur_type,
-        blur_value=blur_value,
-        brightness=widgets.FloatSlider(
-            min=0.3, max=1.8, step=0.1, value=1, description='Brightness:',
-            layout=Layout(width='75%')),
-        gauss_noise=widgets.FloatSlider(
-            min=0, max=0.2, step=0.01, value=0, description='Gauss noise:',
-            layout=Layout(width='75%')))
-
-    return show_images
-

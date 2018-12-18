@@ -7,7 +7,7 @@ import math
 import cv2
 from imgaug import augmenters as iaa
 from imgaug import imgaug as ia
-from imgaug.parameters import (StochasticParameter, Deterministic, Choice, 
+from imgaug.parameters import (StochasticParameter, Deterministic, Choice,
     DiscreteUniform, Normal, Uniform)
 import matplotlib
 
@@ -27,7 +27,7 @@ def get_rectangle_vertices(pixels):
 
     # Arguments
         pixels [list of tuples of 2 ints]: the list of pixels in y, x
-    
+
     # Returns
         [list of 4 ints]: coordinate of top, bottom, left, right
     """
@@ -125,7 +125,7 @@ def paste_image(original_image, pasted_image, original_portion, pasted_portion):
         pasted_image [nd array]: the pasted image
         original_portion [tuple of 4 ints]: top, bottom, left, right
         pasted_portion [tuple of 2 ints]: top, left
-    
+
     # Returns
         [nd array]: the new `pasted_iamge` with portion replaced by
             `original_image`
@@ -139,7 +139,7 @@ def paste_image(original_image, pasted_image, original_portion, pasted_portion):
 
     new_image[p_top:p_bottom,
               p_left:p_right] = original_image[o_top:o_bottom,o_left:o_right]
-    
+
     return new_image
 
 
@@ -158,17 +158,17 @@ def get_subplot_rows_cols(tensor, fixed_rows=None, fixed_cols=None):
 
     # Argument
         tensor [3D np or torch tensor]: the tensor to view subplots
-    
+
     # Returns
         [tuple of 2 ints]: the number of rows and columns
     """
     height, width = tensor.shape[-2:]
-    
+
     reverse = False
     if height > width:
         width, height = height, width
         reverse = True
-    
+
     if width // height == 1:
         columns, rows = 5, 5
     elif width // height <= 2:
@@ -179,10 +179,10 @@ def get_subplot_rows_cols(tensor, fixed_rows=None, fixed_cols=None):
         columns, rows = 2, 4
     else:
         columns, rows = 1, 4
-    
+
     if reverse:
         columns, rows = rows, columns
-    
+
     rows = rows if fixed_rows is None else fixed_rows
     columns = columns if fixed_cols is None else fixed_cols
 
@@ -192,7 +192,7 @@ def get_subplot_rows_cols(tensor, fixed_rows=None, fixed_cols=None):
 ## Image manipulation
 def resize(image, width=None, height=None):
     """Resize the image to match width and height
-    
+
     If any of the width or heigth is missing, then the image is rescaled
     to have the size of the given height or width.
 
@@ -200,7 +200,7 @@ def resize(image, width=None, height=None):
         image [np array]: the image
         width [int]: the width
         height [int]: the height
-    
+
     # Returns
         [np array]: the resized image
     """
@@ -216,7 +216,7 @@ def resize(image, width=None, height=None):
 
     if height is None:
         height = int(width * height_original / width_original)
-    
+
     return cv2.resize(image, (width, height), cv2.INTER_LINEAR)
 
 
@@ -299,7 +299,7 @@ class PerspectiveTransform(iaa.PerspectiveTransform):
     def __init__(self, scale=0, cval=255, keep_size=True,
         name=None, deterministic=False, random_state=None):
         super(PerspectiveTransform, self).__init__(
-            scale=scale, keep_size=keep_size, name=name, 
+            scale=scale, keep_size=keep_size, name=name,
             deterministic=deterministic, random_state=random_state)
 
         self.cval = cval
@@ -397,7 +397,7 @@ class ItalicizeLine(iaa.meta.Augmenter):
     Drop-in replace for shear transformation in iaa.Affine (the implementation
     inside iaa.Affine crop images while italicize)
     """
-    def __init__(self, shear=(-40, 41), cval=255, vertical=False, 
+    def __init__(self, shear=(-40, 41), cval=255, vertical=False,
         name=None, deterministic=False, random_state=None):
         """Initialize the augmentator
 
@@ -416,7 +416,7 @@ class ItalicizeLine(iaa.meta.Augmenter):
             self.shear = Deterministic(shear)
         elif ia.is_iterable(shear):
             ia.do_assert(
-                len(shear) == 2, 
+                len(shear) == 2,
                 "Expected rotate tuple/list with 2 entries, got {} entries."
                     .format((len(shear))))
             ia.do_assert(
@@ -470,7 +470,7 @@ class ItalicizeLine(iaa.meta.Augmenter):
                     axis=1)
             else:
                 point1 = np.array(
-                    [[distance, 0], [distance, height], [distance + 5, 0]], 
+                    [[distance, 0], [distance, height], [distance + 5, 0]],
                     dtype=np.float32)
                 point2 = np.array([[0, 0], [distance, height], [5, 0]],
                     dtype=np.float32)
@@ -483,7 +483,7 @@ class ItalicizeLine(iaa.meta.Augmenter):
             matrix = cv2.getAffineTransform(point1, point2)
             image = cv2.warpAffine(image, matrix, (width, height),
                 borderValue=self.cval)
-            
+
             if self.vertical:
                 # use horizontal intalicization method
                 image = rotate(image, 90, order=1, cval=self.cval)
@@ -530,7 +530,7 @@ class RotateLine(iaa.meta.Augmenter):
             self.angle = Deterministic(angle)
         elif ia.is_iterable(angle):
             ia.do_assert(
-                len(angle) == 2, 
+                len(angle) == 2,
                 "Expected rotate tuple/list with 2 entries, got {} entries."
                     .format((len(angle))))
             ia.do_assert(
@@ -694,8 +694,8 @@ class Skeletonize(iaa.meta.Augmenter):
 
 
 def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
-        pad_horizontal=0, pt=0, elas_alpha=0, elas_sigma=0.4, blur_type=0,
-        blur_value=0, brightness=1.0, gauss_noise=0):
+                  pad_horizontal=0, pt=0, elas_alpha=0, elas_sigma=0.4,
+                  blur_type=0, blur_value=0, brightness=1.0, gauss_noise=0):
     """Augment the image using provided attributes"""
     augmentators = []
 
@@ -703,7 +703,7 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
     # italicize range (-30, 30, float, by 0.5)
     if italicize != 0:
         augmentators.append(ItalicizeLine(shear=italicize, cval=color_bg))
-    
+
     # rotate range (-10, 10, float, by 0.5)
     if angle != 0:
         augmentators.append(RotateLine(angle=angle, cval=color_bg))
@@ -721,13 +721,13 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
     if pt != 0:
         augmentators.append(PerspectiveTransform(
             scale=pt, cval=color_bg, keep_size=False))
-    
+
     # elastic alpha (0, 1.0, float, 0.05), sigma (0.4, 0.6, float, 0.05)
     if elas_alpha != 0:
         elas_sigma = max(elas_sigma, 0.4)
         augmentators.append(iaa.ElasticTransformation(
             alpha=elas_alpha, sigma=elas_sigma, cval=color_bg))
-    
+
     # blur_type: 0, 1, 2, 3 -> None, Gaussian, Average, Median, blur_value
     # either (0.0, 1.5, float, 0.1) for Gaussian or (1, 5, int, 2) for other
     if blur_type == 1:
@@ -739,11 +739,11 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
     elif blur_type == 3:
         blur_value = max(blur_value, 1)
         augmentators.append(iaa.MedianBlur(blur_value))
-    
+
     # brightness (0.3, 1.8, float, 0.05)
     if brightness != 1:
         augmentators.append(iaa.Multiply(brightness))
-    
+
     # gaussian noise (0.0, 0.2, float, 0.01)
     if gauss_noise != 0:
         augmentators.append(iaa.AdditiveGaussianNoise(

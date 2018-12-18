@@ -231,6 +231,7 @@ A learning rate finder function would require:
 - data generator
 - higher_better
 
+After inquiring "A Disciplined Approach to Neural Network Hyper-Parameters" from Leslie Smith, I acknowledge that Super-Convergence is a special case of cyclical learning rate, where there is only 1 cycle, and the maximum learning rate is really large, after that the learning rate is set exponentially smaller until the loss does not have any meaningful improvement. 1-cycle learning means that if we train the model for X iterations, we set the stepsize to be X/3, so that 2X/3 iterations will train the model cyclically, and in the other X/3 iterations, the learning rate will decrease exponentially.
 
 ## Deliverables
 
@@ -242,3 +243,56 @@ A learning rate finder function would require:
 - [-] ~~validation loss and accuracy during training in order to save best model, these values should also be contained inside the history progress~~ (this requirement is too specific to incorporate into BaseModel - the numbers and kinds of metrics to monitored change depending on project)
 - [x] `training.hyper.py:lr_finder`: learning rate finder
 - [x] `models/perceive.py:DataParallel`: DataParallel - automatically add callable functions and variables of `self.module` to `DataParallel
+
+
+----------------------------------------
+# Attack model by augmenting input images
+
+|Start Date|End Date  |
+|----------|----------|
+|2018-12-11|2018-12-13|
+
+## Description
+
+A trained model might not be robust to generalize to test images. A common problem is that augmentation variations (more skew, more padding, more noises...) can influence model's prediction. As a result, it would be nice to instantly see the effect of data augmentation on model prediction. There are lots of variations that we can add to an image. In my experience, padding weirdly influences model's prediction, since padding does not significantly alter the visual characteristic of images (e.g. the prediction of image with white background should not be influenced by white padding but it does!).
+
+In order to examine the effect of augmentation on the models, it is necessary to view the model channels' response to both the original image and to the augmented images. As a result, for a given image and an augmented image, the system must:
+- show channels response to original image on the left side
+- show channels response to augmented image on the middle side
+- show the difference between channel (1) and channel (2)
+(the three above points should be in 1 line of the image, the system should show multiple lines for multiple channels)
+
+### Bugs found
+- `run_partial_model`, `get_number_layers`, `get_layer` and `get_layer_indices` assume different layer indices:
+    + `run_partial_model`, `get_layer`, and `get_layer_indices` assume that the index values include non-pytorch classes
+    + `get_number_layers` does not include the indices inside 
+
+## Discussion
+
+It is commonly known that convolutional layers with max pooling provide translation equivariance. However, when viewing higher feature maps of a model using two images slightly different from each other (2 images have white background, one has 1 pixel of white padding than the other), it shows that the 2 feature maps are quite difference. It is shown below (left - feature1, middle - feature2, right - feature1-feature2):
+
+
+![Feature maps difference](media/plots/diff_feature_maps.png?raw=true "Feature maps difference")
+
+This pokes 2 questions:
+- Why such drastic difference in feature map representations for 2 input images that visually indistinguishable?
+- If we know that 2 very similar images provide this difference in feature map, what can we do to fix it?
+
+To explore, we build a mechanism to see model output if we interfere with intermediate activations (done, using both `run_partial_model` and `predict_partial_model`). All observations below refer to the padding example above:
+- if we take the max (`torch.max`) of 2 corresponding feature maps, the prediction modify slightly, but seems to become a little more unstable
+- randomly pick a random activation value of a ReLU layer, and take a *max* also seems to increase the accuracy. This technique in some sense resembles dropout, in that instead of randomly dropping activation value to *min* (0), we randomly increase it to *max*
+
+## Deliverables
+
+- [x] `diagnose/attack.py:compare_model_response`: compare model input feature maps of 2 different input values
+- [x] `diagnose/trace.py:predict_partial_model`: run the prediction from a feature map
+- [x] fix the discussed bug -> basically a layer or any layer_idx considers valid layers only (those excluding `Sequential`...)
+
+
+
+
+* Study the effect of initialization in trainings
+* Understand more about convolutions kernel: convolutional kernels in DNN attempt to aggregate information around a local points, hence, the shape of the kernel defines what information will be taken into account inside the calculation
+> ...convolution as a kind of information aggregation, but an aggregation from the perspective of a specific point: the point at which the convolution is being evaluated...  The output point wants to summarize information about the value of f(x) across the function’s full domain, but it wants to do so according to some specific rule
+* What about flipping the weights. Usually, convolutional weights assume spatial dependency, what if we flip the position of convolutional weights?
+* Follow the idea from here: https://arxiv.org/abs/1712.09913, what is the distance between the initial state of the model to the converged state, is there anyway to save the trajectory of the model during its training? The idea from the article allow for very minimal exploration of the loss landscape within a small area in either 1 or 2 dimension

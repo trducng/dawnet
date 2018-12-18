@@ -62,24 +62,47 @@ class _BaseModel(nn.Module):
         # Returns
             [list of ints]: list of indices that has layer match `layer_type`
         """
+        idx = 0
         indices = []
-        for idx, (_, layer) in enumerate(self.named_modules()):
+        for _, (_, layer) in enumerate(self.named_modules()):
+            if type(layer) not in get_pytorch_layers():
+                continue
+
             if isinstance(layer, layer_type):
                 indices.append(idx)
+
+            idx += 1
 
         return indices
 
     def get_layer(self, layer_idx):
         """Get the layer that has `layer_idx` in `named_modules()`
 
+        Note that the layer is filterred, in that non-native Pytorch modules
+        (those that are constructed by e.g. Sequential...) are ignored.
+
         # Arguments
             layer_idx [int]: the final layer index to retrieve output
 
         # Returns
-            [str]: the layer name
             [torch.nn.Module]: the specific layer
         """
-        return list(self.named_modules())[layer_idx]
+        return self.get_layers()[layer_idx][1]
+
+    def get_layers(self):
+        """Get all layers
+
+        # Returns
+            [list of tuple of strs and Module]: layer name and specific layer
+        """
+        layers = []
+        for name, layer in self.named_modules():
+            if not isinstance(layer, tuple(get_pytorch_layers())):
+                continue
+
+            layers.append((name, layer))
+
+        return layers
 
     def get_number_layers(self):
         """Get number of layers

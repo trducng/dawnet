@@ -11,7 +11,7 @@ from dawnet.utils.exceptions import FinishTrainingException
 
 
 def lr_finder(model, generator, optimizer, key=lambda obj: obj, min_lr=0.0001,
-    max_lr=5, n_steps=20, n_iterations=200):
+              max_lr=5, n_steps=20, n_iterations=200):
     """Find the learning rate, using 2015 CLR paper
 
     # Arguments
@@ -96,8 +96,8 @@ class SuperConvergence(optim.lr_scheduler._LRScheduler):
     """
 
     def __init__(self, optimizer, max_lr, base_lr=None, stepsize=10000,
-        omega=0.1, patience=None, better_as_larger=True, save_model=None,
-        last_epoch=-1):
+                 omega=0.1, patience=None, better_as_larger=True,
+                 save_model=None, last_epoch=-1):
         """Initialize the object"""
 
         # cyclical learning rate
