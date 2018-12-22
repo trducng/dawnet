@@ -29,7 +29,7 @@ setuptools.setup(
         "ipython>=7.2.0",
         "ipywidgets>=7.4.0",
         "opencv-python>=3.4.4.0",
-        "psutil>5.4.8",
+        "psutil>=5.4.0",
         "scipy>=1.1.0",
         "scikit-image>=0.14.0",
         "shapely>=1.6.4",

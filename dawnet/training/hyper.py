@@ -202,7 +202,8 @@ class SuperConvergence(optim.lr_scheduler._LRScheduler):
         delta *= self.lr_range
 
         if (delta == 0 and self.last_epoch // self.stepsize % 2 == 0 and
-            self.save_model is not None):
+            self.save_model is not None and self.last_epoch > 0):
+            # delta == 0 means the learning rate at lowest point
             self.save_model()
 
         return [base_lr + delta for base_lr in self.base_lrs]
@@ -255,4 +256,9 @@ class SuperConvergence(optim.lr_scheduler._LRScheduler):
         if self.best is None:
             return True
 
-        return abs(self.better(metrics, self.best) - metrics) < 1e-7
+        if abs(self.better(metrics, self.best) - metrics) < 1e-7:
+            # additional condition to check if metrics == self.best
+            if abs(self.better(metrics, self.best) - self.best) > 1e-7:
+                return True
+
+        return False

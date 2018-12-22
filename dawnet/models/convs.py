@@ -1,10 +1,6 @@
-# Repository of common convolutional architectures
-# @author: John
-# =============================================================================
-import pdb
-from abc import ABC, abstractclassmethod
-
-import numpy as np
+"""Repository of common convolutional architectures
+@author: _john
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,7 +10,8 @@ class ZeroPadLayer(nn.Module):
     """Zero padding for shortcut.
 
     This layer transform a [N x C_in x H_in x W_in] tensor into a
-    [N X C_out x H_out x W_out] tenosr. More specifically, this layer:
+    [N X C_out x H_in/stride x W_in/stride] tensor. More specifically,
+    this layer:
         (1) pads missing channels with channels of 0 to get C_out
         (2) performs adaptive maxpooling to get the desired output shape
             to get H_out and W_out
@@ -37,6 +34,7 @@ class ZeroPadLayer(nn.Module):
                 'max_pool',
                 nn.MaxPool2d(kernel_size=stride, stride=stride))
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass
 
@@ -56,10 +54,11 @@ class SELayer(nn.Module):
         super(SELayer, self).__init__()
         bottleneck = in_channels // scale
 
-        self.avg_pool = nn.AdaptiveAvgPool2d((1,1))
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.linear1 = nn.Linear(in_channels, bottleneck)
         self.linear2 = nn.Linear(bottleneck, in_channels)
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass"""
         batch_size = x.size(0)
@@ -74,34 +73,33 @@ class SELayer(nn.Module):
 class DenseUnit(nn.Module):
     """Implement the DenseBlock, as described in
         https://arxiv.org/abs/1608.06993
-    
+
     This class implements the bottleneck version of the convolutional layer in
     denseunit (referred in the paper as DenseNet-B)
     """
 
-    def __init__(self, in_channels, growth_rate, dropout=0):
+    def __init__(self, in_channels, growth_rate, dropout=None):
         """Initialize the block"""
         super(DenseUnit, self).__init__()
 
-        self.dropout = dropout
+        self.dropout = None if dropout is None else nn.Dropout2d(dropout)
         bottleneck_channels = growth_rate * 4
 
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, kernel_size=1,
-                               stride=1, padding=0)
+                               stride=1, padding=0, bias=False)
 
         self.bn2 = nn.BatchNorm2d(bottleneck_channels)
         self.conv2 = nn.Conv2d(bottleneck_channels, growth_rate, kernel_size=3,
-                               stride=1, padding=1)
+                               stride=1, padding=1, bias=False)
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass"""
         hidden = self.conv1(F.relu(self.bn1(x)))
-        if self.dropout > 0:
-            hidden = F.dropout(hidden, p=self.dropout, training=self.training)
         hidden = self.conv2(F.relu(self.bn2(hidden)))
-        if self.dropout > 0:
-            hidden = F.dropout(hidden, p=self.dropout, training=self.training)
+        if self.dropout is not None:
+            hidden = self.dropout(hidden)
 
                                                         # pylint: disable=E1101
         return torch.cat([x, hidden], dim=1)
@@ -111,17 +109,20 @@ class ResidualBasicUnit(nn.Module):
     """A basic residual block"""
 
     def __init__(self, in_channels, out_channels, stride, se_scale=None,
-        name='basic_res'):
+                 name='basic_res'):
         """Initialize the basic residual block
 
         # Arguments
             in_channels [int]: the number of input channels for the first layer
-            out_channels [int]: the number of output channels for the last layer
+            out_channels [int]: the number of output channels for the last
+                layer
             stride [int]: the stride of the first convolutional layer in block
+
         """
         super(ResidualBasicUnit, self).__init__()
 
-        # TODO: confirm the bias term in a residual block
+        # the bias in residual block is unnecessary as it is offset in
+        # the next batchnorm
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
                                stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -138,17 +139,18 @@ class ResidualBasicUnit(nn.Module):
 
         # construct the shortcut
         self.shortcut = nn.Sequential()
-        if in_channels != out_channels:
+        if in_channels != out_channels or stride != 1:
             self.shortcut.add_module(
                 '{}_shortcut_conv'.format(name),
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2,
-                          padding=0, bias=False)
+                nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                          stride=stride, padding=0, bias=False)
             )
             self.shortcut.add_module(
                 '{}_shortcut_bn'.format(name),
                 nn.BatchNorm2d(out_channels)
             )
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass"""
         hidden = F.relu(self.bn1(self.conv1(x)))
@@ -165,8 +167,8 @@ class ResidualBasicUnit(nn.Module):
 class ResidualBottleneckUnit(nn.Module):
     """Residual block using bottleneck architecture"""
 
-    def __init__(self, in_channels, out_channels, stride,
-        se_scale=None, name='bottle_res'):
+    def __init__(self, in_channels, out_channels, stride, se_scale=None,
+                 name='bottle_res'):
         """Initialize the residual block"""
         super(ResidualBottleneckUnit, self).__init__()
         self.expansion = 4
@@ -182,11 +184,11 @@ class ResidualBottleneckUnit(nn.Module):
                                stride=1, padding=0, bias=False)
         self.bn1 = nn.BatchNorm2d(bottleneck_channels)
         self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels,
-                               kernel_size=3, stride=stride, padding=0,
+                               kernel_size=3, stride=stride, padding=1,
                                bias=False)
         self.bn2 = nn.BatchNorm2d(bottleneck_channels)
-        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, kernel_size=1,
-                               stride=1, padding=0, bias=False)
+        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels,
+                               kernel_size=1, stride=1, padding=0, bias=False)
         self.bn3 = nn.BatchNorm2d(out_channels)
 
         self.se_layer = (
@@ -196,7 +198,7 @@ class ResidualBottleneckUnit(nn.Module):
 
         # residual shortcut
         self.shortcut = nn.Sequential()
-        if in_channels != out_channels:
+        if in_channels != out_channels or stride != 1:
             self.shortcut.add_module(
                 '{}_shortcut_conv'.format(name),
                 nn.Conv2d(in_channels, out_channels, kernel_size=1,
@@ -205,6 +207,7 @@ class ResidualBottleneckUnit(nn.Module):
                 '{}_shortcut_bn'.format(name),
                 nn.BatchNorm2d(out_channels))
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass"""
         hidden = F.relu(self.bn1(self.conv1(x)))
@@ -234,39 +237,55 @@ class ResidualBasicPreactUnit(nn.Module):
     should be examined
     """
 
-    def __init__(self, in_channels, out_channels, stride, dropout=0,
-        se_scale=None, name='basic_preact'):
+    def __init__(self, in_channels, out_channels, stride, dropout=None,
+                 skip_first_relu=False, last_bn=False, zero_pad=False,
+                 se_scale=None, name='basic_preact'):
         """Initialize the object"""
         super(ResidualBasicPreactUnit, self).__init__()
 
-        self.dropout = dropout
+        self._skip_first_relu = skip_first_relu
+        self._last_bn = last_bn
+        self.dropout = None if dropout is None else nn.Dropout2d(dropout)
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
                                stride=stride, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                               stride=1, padding=0, bias=False)
+                               stride=1, padding=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(out_channels)
+
         self.se_layer = (
             SELayer(in_channels=out_channels, scale=se_scale)
             if se_scale is not None
             else None)
 
         self.shortcut = nn.Sequential()
-        if in_channels != out_channels:
+        if in_channels != out_channels or stride != 1:
+            if zero_pad:
+                forward = ZeroPadLayer(
+                    n_channels_pad=out_channels-in_channels,
+                    stride=stride)
+            else:
+                forward = nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                                    stride=stride, padding=0, bias=False)
             self.shortcut.add_module(
-                '{}_shortcut_conv'.format(name),
-                nn.Conv2d(in_channels, out_channels, kernel_size=3,
-                          stride=stride, padding=1, bias=False))
+                '{}_shortcut_conv'.format(name), forward)
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass"""
-        residual = self.conv1(F.relu(self.bn1(x)))
+        residual = self.bn1(x)
+        if not self._skip_first_relu:
+            residual = F.relu(residual)
+        residual = self.conv1(residual)
 
-        if self.dropout > 0:
-            residual = F.dropout(residual, p=self.dropout,
-                                 training=self.training, inplace=False)
+        if self.dropout is not None:
+            residual = self.dropout(residual)
 
         residual = self.conv2(F.relu(self.bn2(residual)))
+        if self._last_bn:
+            residual = self.bn3(residual)
+
         if self.se_layer is not None:
             residual = self.se_layer(residual)
 
@@ -283,17 +302,20 @@ class ResidualBottleneckPreactUnit(nn.Module):
         - skip the first relu & incorporate last batch & zero padding:
             https://arxiv.org/abs/1610.02915, to get the desired behavior, set
             `skip_first_relu=True, last_bn=True, zero_pad=True`
+        - use dropout: https://arxiv.org/abs/1605.07146; only for the non-
+            channel scaling convolutions
     """
 
     def __init__(self, in_channels, out_channels, stride, se_scale=None,
-        skip_first_relu=False, last_bn=False, zero_pad=False,
-        name='bottlenect_preact'):
+                 skip_first_relu=False, last_bn=False, zero_pad=False,
+                 dropout=None, name='bottlenect_preact'):
         """Initialize the object"""
         super(ResidualBottleneckPreactUnit, self).__init__()
 
         bottleneck_channels = out_channels // (2 * out_channels // in_channels)
         self._skip_first_relu = skip_first_relu
         self._last_bn = last_bn
+        self.dropout = None if dropout is None else nn.Dropout2d(dropout)
 
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, kernel_size=1,
@@ -303,8 +325,8 @@ class ResidualBottleneckPreactUnit(nn.Module):
                                kernel_size=3, stride=stride, padding=1,
                                bias=False)
         self.bn3 = nn.BatchNorm2d(bottleneck_channels)
-        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, kernel_size=1,
-                               stride=1, padding=0, bias=False)
+        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels,
+                               kernel_size=1, stride=1, padding=0, bias=False)
         self.bn4 = nn.BatchNorm2d(out_channels)
 
         self.se_layer = (
@@ -314,7 +336,7 @@ class ResidualBottleneckPreactUnit(nn.Module):
 
         # construct the shortcut
         self.shortcut = nn.Sequential()
-        if in_channels != out_channels:
+        if in_channels != out_channels or stride != 1:
             if zero_pad:
                 forward = ZeroPadLayer(
                     n_channels_pad=out_channels-in_channels,
@@ -326,12 +348,16 @@ class ResidualBottleneckPreactUnit(nn.Module):
                 '{}_shortcut_conv'.format(name),
                 forward)
 
+    #pylint: disable=W0221
     def forward(self, x):
         """Perform the forward pass"""
         residual = self.bn1(x)
         residual = (self.conv1(residual) if self._skip_first_relu else
                     self.conv1(F.relu(residual)))
-        residual = self.conv2(F.relu(self.bn2(residual)))
+        residual = F.relu(self.bn2(residual))
+        if self.dropout is not None:
+            residual = self.dropout(residual)
+        residual = self.conv2(residual)
         residual = self.conv3(F.relu(self.bn3(residual)))
         residual = self.bn4(residual) if self._last_bn else residual
 
@@ -416,28 +442,28 @@ def get_conv_output_shape(input_shape, kernel_size, stride, padding):
         kernel_size [int or tuple of ints]: the kernel size
         stride [int or tuple of ints]: the stride
         padding [int or tuple of ints]: the padding value
-    
+
     # Returns
         [int or tuple of ints]: the output shape
     """
     if isinstance(input_shape, int):
         input_shape = [input_shape]
-    
+
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * len(input_shape)
-    
+
     if isinstance(stride, int):
         stride = [stride] * len(input_shape)
-    
+
     if isinstance(padding, int):
         padding = [padding] * len(input_shape)
-    
+
     result = []
     for idx, each_value in enumerate(input_shape):
         result.append(
             (each_value - kernel_size[idx] + 2 * padding[idx]) / stride[idx]
             + 1)
-    
+
     return result
 
 
@@ -449,28 +475,27 @@ def get_conv_input_shape(output_shape, kernel_size, stride, padding):
         kernel_size [int or tuple of ints]: the kernel size
         stride [int or tuple of ints]: the stride
         padding [int or tuple of ints]: the padding value
-    
+
     # Returns
         [int or tuple of ints]: the input shape
     """
     if isinstance(output_shape, int):
         output_shape = [output_shape]
-    
+
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * len(output_shape)
-    
+
     if isinstance(stride, int):
         stride = [stride] * len(output_shape)
-    
+
     if isinstance(padding, int):
         padding = [padding] * len(output_shape)
-    
+
     result = []
     for idx, each_value in enumerate(output_shape):
         result.append(
             (each_value -1) * stride[idx]
             - 2 * padding[idx]
             + kernel_size[idx])
-    
+
     return result
-    

@@ -1,6 +1,7 @@
 # Basic interface for a model
 # @author: John
 # =============================================================================
+import math
 import os
 import time
 import warnings
@@ -269,7 +270,7 @@ class BaseModel(_BaseModel):
 
         return block
 
-    def construct_large_residual_block(self, in_channels, out_channels, stride,
+    def construct_residual_block(self, in_channels, out_channels, stride,
         n_units, unit_type, name='res', **kwargs):
         """Construct a large residual block from smaller blocks
 
@@ -298,7 +299,7 @@ class BaseModel(_BaseModel):
         return block
 
     def construct_dense_block(self, in_channels, growth_rate, n_units,
-                              name='dense_unit'):
+                              dropout=None, name='dense_unit'):
         """Construct the dense block
 
         # Arguments
@@ -318,13 +319,14 @@ class BaseModel(_BaseModel):
 
             block.add_module(
                 '{}_{}'.format(name, each_block),
-                DenseUnit(in_channels=in_channels, growth_rate=growth_rate)
+                DenseUnit(in_channels=in_channels, growth_rate=growth_rate,
+                          dropout=dropout)
             )
 
         return block, in_channels + growth_rate
 
     def construct_dense_transition_block(self, in_channels, compression,
-        name='dense_transition'):
+                                         name='dense_transition'):
         """Construct the transition block in densenet
 
         # Arguments
@@ -338,7 +340,10 @@ class BaseModel(_BaseModel):
             [int]: the number of output channels
         """
         out_channels = int(in_channels * compression)
-        block = nn.Sequential()
+        block = nn.Sequential(
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True)
+        )
         block.add_module(
             '{}_1x1conv'.format(name),
             nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
@@ -348,6 +353,50 @@ class BaseModel(_BaseModel):
             '{}_avgpool'.format(name),
             nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
         )
+
+        return block, out_channels
+
+    def construct_pyramid_block(self, in_channels, alpha, depth, stride,
+                                n_units, unit_type, multiplicative=False,
+                                name='pyramidblock', **kwargs):
+        """Construct the pyramid block
+
+        The Pyramid block is described here: https://arxiv.org/abs/1610.02915.
+        Basically it contains 2 schemes:
+            - Multiplicative: math.floor(last_channel * alpha**(1/N))
+            - Additive: math.floor(last_channel + alpha/N)
+
+        # Arguments
+            in_channels [int]: the number of blocks' input channels
+            alpha [float]: the widening factor
+            depth [int]: the total number of residual blocks in the network
+            stride [int]: the stride to take when downsampling
+            n_units [int]: the number of residual blocks in this pyramid block
+            unit_type [nn.Module]: the block type
+            multiplicative [bool]: widen using the multiplicative or additive
+                scheme
+            name [str]: the name for this block
+
+        # Returns
+            [nn.Module]: the pyramid block
+            [int]: the number of output channels
+        """
+        def get_out_channels(_in_channels):
+            """Get the number of output channels"""
+            if multiplicative:
+                return math.floor(_in_channels * alpha ** (1 / depth))
+            return math.floor(_in_channels + alpha / depth)
+
+        out_channels = get_out_channels(in_channels)
+        block = nn.Sequential()
+        for each_block in range(n_units):
+            if each_block > 0:
+                in_channels = out_channels
+                stride = 1
+            block.add_module(
+                '{}_{}'.format(name, each_block),
+                unit_type(in_channels, out_channels, stride=stride, **kwargs))
+            out_channels = get_out_channels(in_channels)
 
         return block, out_channels
 
