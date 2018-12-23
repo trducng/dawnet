@@ -65,7 +65,7 @@ class SELayer(nn.Module):
 
         hidden = self.avg_pool(x).view(batch_size, -1).contiguous()
         hidden = F.relu(self.linear1(hidden))
-        hidden = F.sigmoid(self.linear2(hidden)).view(batch_size, -1, 1, 1)
+        hidden = torch.sigmoid(self.linear2(hidden)).view(batch_size, -1, 1, 1)
 
         return torch.mul(hidden, x)
 
@@ -117,6 +117,7 @@ class ResidualBasicUnit(nn.Module):
             out_channels [int]: the number of output channels for the last
                 layer
             stride [int]: the stride of the first convolutional layer in block
+            se_scale [int]: the reduction ratio used. If not set, skip SE
 
         """
         super(ResidualBasicUnit, self).__init__()
@@ -265,11 +266,13 @@ class ResidualBasicPreactUnit(nn.Module):
                 forward = ZeroPadLayer(
                     n_channels_pad=out_channels-in_channels,
                     stride=stride)
+                self.shortcut.add_module(
+                    '{}_shortcut_zeropad'.format(name), forward)
             else:
                 forward = nn.Conv2d(in_channels, out_channels, kernel_size=1,
                                     stride=stride, padding=0, bias=False)
-            self.shortcut.add_module(
-                '{}_shortcut_conv'.format(name), forward)
+                self.shortcut.add_module(
+                    '{}_shortcut_conv'.format(name), forward)
 
     #pylint: disable=W0221
     def forward(self, x):
@@ -341,12 +344,15 @@ class ResidualBottleneckPreactUnit(nn.Module):
                 forward = ZeroPadLayer(
                     n_channels_pad=out_channels-in_channels,
                     stride=stride)
+                self.shortcut.add_module(
+                    '{}_shortcut_zeropad'.format(name),
+                    forward)
             else:
                 forward = nn.Conv2d(in_channels, out_channels, kernel_size=1,
                                     padding=0, stride=stride, bias=False)
-            self.shortcut.add_module(
-                '{}_shortcut_conv'.format(name),
-                forward)
+                self.shortcut.add_module(
+                    '{}_shortcut_conv'.format(name),
+                    forward)
 
     #pylint: disable=W0221
     def forward(self, x):
@@ -367,7 +373,7 @@ class ResidualBottleneckPreactUnit(nn.Module):
         return residual + self.shortcut(x)
 
 
-class ResidualNextUnit(nn.Module):
+class ResidualNextUnitDepr(nn.Module):
     """A block in used in ResNeXT model, as documented here:
         https://arxiv.org/abs/1611.05431
 
@@ -377,13 +383,14 @@ class ResidualNextUnit(nn.Module):
     @TODO: experiment the performance with the Conv2d group parameter set
     to cardinality. Actually, as also noted in the paper, the group
     convolution is an equavalent form of this unit. Might implement that
-    for faster performance.
+    for faster performance. @NOTE: this unit is deprecated in favor of group
+    convolution
     """
 
     def __init__(self, in_channels, out_channels, stride, cardinality,
-        se_scale=None, bottleneck_channels=None, name='resnext'):
+                 se_scale=None, bottleneck_channels=None, name='resnextdepr'):
         """Initialize the unit"""
-        super(ResidualNextUnit, self).__init__()
+        super(ResidualNextUnitDepr, self).__init__()
 
         if bottleneck_channels is None:
             bottleneck_channels = in_channels // (2 * cardinality)
@@ -420,18 +427,103 @@ class ResidualNextUnit(nn.Module):
                 nn.Conv2d(in_channels, out_channels, kernel_size=3,
                           stride=2, padding=1, bias=0))
 
-    def forward(self, x):
+    def forward(self, input_x):
         """Perform the forward pass"""
         hiddens = []
         for each_branch in self.blocks:
-            hiddens.append(each_branch(x))
+            hiddens.append(each_branch(input_x))
 
                                                         # pylint: disable=E1101
         residual = torch.sum(hiddens, dim=1)
         if self.se_layer is not None:
             residual = self.se_layer(residual)
 
-        return residual + self.shortcuts(x)
+        return residual + self.shortcuts(input_x)
+
+
+class ResidualNextUnit(nn.Module):
+    """A block in used in ResNeXT model, as documented here:
+        https://arxiv.org/abs/1611.05431
+
+    Note that this implementation also incorporate pre-activation method by
+    Kaiming He. This implementation exploits group convolutions and also
+    assumes preactivation operations
+
+    # Arguments
+        in_channels [int]: the number of input channels
+        out_channels [int]: the number of output channels
+        stride [int]: first layer in the block convolution stride
+        cardinality [int]: the cardinality (think of groups)
+        bottleneck [int]: the number of bottleneck channels in each cardinal
+        se_scale [int]: the reduction ratio used. If not set, skip SE
+        name [str]: the name of the unit
+    """
+
+    def __init__(self, in_channels, out_channels, stride, cardinality,
+                 bottleneck=4, skip_first_relu=False, last_bn=False,
+                 zero_pad=False, dropout=None, se_scale=None, name='resnext'):
+        super(ResidualNextUnit, self).__init__()
+        bottleneck_channels = cardinality * bottleneck
+
+        self.dropout = None if dropout is None else nn.Dropout2d(p=dropout)
+        self._skip_first_relu = skip_first_relu
+        self._last_bn = last_bn
+
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        self.conv1 = nn.Conv2d(
+            in_channels=in_channels, out_channels=bottleneck_channels,
+            kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn2 = nn.BatchNorm2d(bottleneck_channels)
+        self.conv2 = nn.Conv2d(
+            in_channels=bottleneck_channels, out_channels=bottleneck_channels,
+            kernel_size=3, stride=stride, padding=1, groups=cardinality,
+            bias=False)
+        self.bn3 = nn.BatchNorm2d(bottleneck_channels)
+        self.conv3 = nn.Conv2d(
+            in_channels=bottleneck_channels, out_channels=out_channels,
+            kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn4 = nn.BatchNorm2d(out_channels)
+        self.se_layer = (
+            SELayer(in_channels=out_channels, scale=se_scale)
+            if se_scale is not None
+            else None)
+
+
+        self.shortcut = nn.Sequential()
+        if in_channels != out_channels or stride != 1:
+            if zero_pad:
+                forward = ZeroPadLayer(
+                    n_channels_pad=out_channels-in_channels,
+                    stride=stride)
+                self.shortcut.add_module(
+                    '{}_shortcut_zeropad'.format(name), forward)
+            else:
+                forward = nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                                    padding=0, stride=stride, bias=False)
+                self.shortcut.add_module(
+                    '{}_shortcut_conv'.format(name), forward)
+
+    #pylint: disable=W0221
+    def forward(self, input_x):
+        """Perform the forward pass"""
+        residual = self.bn1(input_x)
+        if not self._skip_first_relu:
+            residual = F.relu(residual, inplace=True)
+        residual = self.conv1(residual)
+        residual = self.conv2(F.relu(self.bn2(residual)))
+        residual = self.conv3(F.relu(self.bn3(residual)))
+        if self._last_bn:
+            residual = self.bn4(residual)
+
+        if self.se_layer is not None:
+            residual = self.se_layer(residual)
+
+        if self.dropout is not None:
+            residual = self.dropout(residual)
+
+        output = residual + self.shortcut(input_x)
+
+        return output
 
 
 def get_conv_output_shape(input_shape, kernel_size, stride, padding):
