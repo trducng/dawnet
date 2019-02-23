@@ -1,6 +1,9 @@
 # Implement the shake-shake algorithm
 # @author: John Nguyen
 # ==============================================================================
+import math
+import torch
+import torch.nn as nn
 from torch.autograd import Function
 
 
@@ -27,4 +30,16 @@ class Shake(Function):
 
         return grad_x1, grad_x2, grad_alpha, grad_beta
 
+
 shake = Shake.apply
+
+
+class GELU(nn.Module):
+    """Implement the GELU activation function mentioned in this paper
+        https://arxiv.org/abs/1606.08415
+    """
+
+                                                        #pylint: disable=W0221
+    def forward(self, x):
+        return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi)
+               * (x + 0.044715 * torch.pow(x, 3))))

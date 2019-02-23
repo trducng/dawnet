@@ -296,3 +296,47 @@ To explore, we build a mechanism to see model output if we interfere with interm
 > ...convolution as a kind of information aggregation, but an aggregation from the perspective of a specific point: the point at which the convolution is being evaluated...  The output point wants to summarize information about the value of f(x) across the function’s full domain, but it wants to do so according to some specific rule
 * What about flipping the weights. Usually, convolutional weights assume spatial dependency, what if we flip the position of convolutional weights?
 * Follow the idea from here: https://arxiv.org/abs/1712.09913, what is the distance between the initial state of the model to the converged state, is there anyway to save the trajectory of the model during its training? The idea from the article allow for very minimal exploration of the loss landscape within a small area in either 1 or 2 dimension
+
+
+----------------------------------------
+# Visualize loss landscape
+
+|Start Date|End Date  |
+|----------|----------|
+|2019-01-06|2018-01-08|
+
+## Description
+
+Visualizing the loss landscape is a fun way to partly understand what happens under the hood of a neural network. It can provide useful knowledge to know whether a model architecture is good for a particular dataset, or whether another choice of hyperparameters can provide better generalization power to the trained model. There are many methods to visualize or to peak into the inner-working of the model, this project will talk first about how to visualize loss landscape, inspired by the paper **Visualizing Loss Landscape of Neural Nets**.
+
+This method is useful to:
+- visualize the loss landscape of a model around a given parameter point (2D direction);
+- visualize the loss landscape of a model from 1 parameter point to another parameter point (1D direction).
+
+From the loss landscape visualization, one can figure out if one's model architecture and training setting are suitable.
+
+This visualization method is inspired by **1-Dimensional Linear Interpolation** and **Contour Plots & Random Directions**. It differs in how to determine the direction length: it normalizes the direction length to be equal to the norm of the model weights, rather than using random direction length like in the later 2 methods. The normalization step avoids occurences where the same pertubations to large weights is smaller than to small weights, making incompatible comparision.
+
+The basic idea of this visualization method is as follow. Given a trained weights and biases parameters \thetha_1 (which is a vector), pick a target point in the same parameter space \theta_2, such that the norm of (\delta = \theta_2 - \theta_1) is equal to the norm of \theta_1. Then for a sequence of \alpha in range of 0, and 1, calculate the loss value of model at weight \theta_1 + \alpha\delta.
+
+Keep in mind:
+- Saliency map
+- Maximize neurons
+- Maximize the output neurons
+- For a given image, follow the most activated path: http://people.csail.mit.edu/torralba/research/drawCNN/drawNet.html
+- For a trained model, pass through several images, and see which images ignite certain neuron
+- RNN: Andrej Kaparthy, Seq2seq-Vis for machine translation
+- DQNViz (VAST 2018)
+- Visualize data:
+    + tSNE
+    + UMAP
+    + Isomap
+    + Sammon mapping
+    + Multidimensional scaling 
+- https://projector.tensorflow.org/
+- Visualizing Deep Network Training Trajectories
+
+Observation with CTC loss:
+- the loss is unstable, moving from -1 to 0 to 1 along a normed distance result in a transition from chaos to sensible to chaos
+- none of the observing point along the way provides the correct answer
+- as a result, it is not possible to use weight jitter testing using this method for sequence problem

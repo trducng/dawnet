@@ -85,7 +85,7 @@ def changing_input_view_feature_channel(
                     blur_value, brightness, gauss_noise, crop):
 
         fig.clf()
-        
+
         # enhance the image
         top, bottom, left, right = crop.replace(' ', '').split(',')
         image_new = image[int(top):int(bottom), int(left):int(right)]
@@ -287,7 +287,7 @@ def compare_model_response(
 
     def show_images(layer, page, crop):
         """Show the layers interactively"""
-        
+
         left, right = crop.replace(' ', '').split(',')
         left, right = int(left), int(right)
         pred1 = model.x_infer(input1)
@@ -332,7 +332,7 @@ def compare_model_response(
                 image2 = normalize_to_range(
                     image2, min_value=0, max_value=255,
                     current_range=(min_value, max_value))
-        
+
                 plot = fig.add_subplot(rows+1, columns, _idx*3+1)
                 plot.imshow(image1, cmap='gray')
                 plot.axis('off')
@@ -350,7 +350,7 @@ def compare_model_response(
             image2 = feature2_map[channel_idx]
             image_diff = normalize_to_range(
                 image1 - image2, min_value=0, max_value=255)
-            
+
             min_value = min(np.min(image1), np.min(image2))
             max_value = max(np.max(image1), np.max(image2))
 

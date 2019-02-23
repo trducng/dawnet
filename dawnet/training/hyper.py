@@ -1,6 +1,7 @@
 # Tools related to hyper-parameters
 # @author: John
 # =============================================================================
+import math
 import warnings
 
 import numpy as np
@@ -10,8 +11,8 @@ from tqdm import tqdm
 from dawnet.utils.exceptions import FinishTrainingException
 
 
-def lr_finder(model, generator, optimizer, key=lambda obj: obj, min_lr=0.0001,
-              max_lr=5, n_steps=20, n_iterations=200):
+def lr_finder(model, generator, optimizer, key=lambda obj: obj, min_lr=1e-6,
+              max_lr=5, exp_factor=3.0, n_linear_steps=None, n_iterations=200):
     """Find the learning rate, using 2015 CLR paper
 
     # Arguments
@@ -25,8 +26,12 @@ def lr_finder(model, generator, optimizer, key=lambda obj: obj, min_lr=0.0001,
             keys
         min_lr [float]: the min learning rate to test
         max_lr [float]: the max learning rate to test
-        n_steps [int]: the number of learning rate steps between `min_lr`
-            and `max_lr`
+        exp_factor [float]: the exponential factor, consecutive learning rates
+            increase by factor of `exp_factor`. Will be disabled if
+            `n_linear_steps` is set
+        n_linear_steps [int]: the number of learning rate steps between
+            `min_lr` and `max_lr`. If set, we will automatically use linear lr
+            increase scheme. Default None
         n_iterations [int]: the number of training iterations for each learning
             rate
 
@@ -34,7 +39,19 @@ def lr_finder(model, generator, optimizer, key=lambda obj: obj, min_lr=0.0001,
         [list of tuple of 2 floats]: the learning rate and metrics
     """
     result = []
-    lrs = tqdm(list(np.linspace(min_lr, max_lr, n_steps)), desc='LR')
+    if isinstance(n_linear_steps, int):
+        # increase learning rate linearly from min to max lr
+        lrs = np.linspace(min_lr, max_lr, n_linear_steps)
+    elif isinstance(float(exp_factor), float):
+        # increase learning rate by `exp_factor`
+        steps = round(math.log(max_lr / min_lr, exp_factor))
+        lrs = [min_lr * exp_factor ** exp for exp in range(steps)]
+    else:
+        raise AttributeError('should set either `exp_factor` and '
+                             '`n_linear_steps with a number, currently {} & {}'
+                             .format(exp_factor, n_linear_steps))
+
+    lrs = tqdm(list(lrs), desc='LR')
     for each_lr in lrs:
         lrs.set_description(desc='LR {:.4f}'.format(each_lr), refresh=True)
         for param_group in optimizer.param_groups:

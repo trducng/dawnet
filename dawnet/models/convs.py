@@ -232,10 +232,16 @@ class ResidualBasicPreactUnit(nn.Module):
     wide unit has exactly the same architecture as this unit. The only
     difference is wide unit will use a larger amount of channels.
 
-    @TODO: the preactivation implementation also includes 3 undocumented
-    flow, such as: remove the first relu, add one more batch norm, add
-    Relu(batchnorm) to the identity. The performance of these 3 behaviors
-    should be examined
+    # Arguments
+        in_channels [int]: the number of input channels
+        out_channels [int]: the number of output channels
+        stride [int or tuple of ints]: the stride to do downsampling
+        dropout [float]: the dropout value if used
+        skip_first_relu [bool]: whether to skip the first relu operation (Pyra)
+        last_bn [bool]: whether to add the final batch norm (Pyramidal)
+        zero_pad [bool]: whether to use zero padding identity or affine
+        se_scale [int]: if set, use Squeeze-Excitation mechanism
+        name [str]: the name of the block
     """
 
     def __init__(self, in_channels, out_channels, stride, dropout=None,
@@ -538,6 +544,10 @@ def get_conv_output_shape(input_shape, kernel_size, stride, padding):
     # Returns
         [int or tuple of ints]: the output shape
     """
+    # vectorized version
+    if isinstance(input_shape, torch.Tensor):
+        return (input_shape - kernel_size + 2 * padding) // stride + 1
+
     if isinstance(input_shape, int):
         input_shape = [input_shape]
 
@@ -553,14 +563,17 @@ def get_conv_output_shape(input_shape, kernel_size, stride, padding):
     result = []
     for idx, each_value in enumerate(input_shape):
         result.append(
-            (each_value - kernel_size[idx] + 2 * padding[idx]) / stride[idx]
+            (each_value - kernel_size[idx] + 2 * padding[idx]) // stride[idx]
             + 1)
 
     return result
 
 
 def get_conv_input_shape(output_shape, kernel_size, stride, padding):
-    """Get the convolutional input shape
+    """Get the convolutional input shape.
+
+    Precaution: this method might not be absolutely correct, since multiple
+    input shapes can result in the same output shape.
 
     # Arguments
         output_shape [int or tuple of ints]: the array of shapes
@@ -586,7 +599,7 @@ def get_conv_input_shape(output_shape, kernel_size, stride, padding):
     result = []
     for idx, each_value in enumerate(output_shape):
         result.append(
-            (each_value -1) * stride[idx]
+            (each_value - 1) * stride[idx]
             - 2 * padding[idx]
             + kernel_size[idx])
 
