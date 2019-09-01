@@ -16,6 +16,7 @@ if os.name == 'posix' and 'DISPLAY' not in os.environ:
     matplotlib.use('agg')
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import numpy as np
 import numpy.random as random
 from scipy.ndimage import rotate
@@ -115,6 +116,32 @@ def show_image_ascii(image, bgr=False):
     # Print out
     for each_row in new_image:
         print(each_row)
+
+
+def show_animation(images, *args, **kwargs):
+    """Quickly show animation from list of images
+
+    Inside jupyter notebook, should have `%matplotlib notebook`
+    Several good approaches can be found:
+    https://stackoverflow.com/questions/35532498/animation-in-ipython-notebook
+
+    # Arguments
+        images [list of 2D or 3D np array]: each image is H x W x C
+        *args, **kwargs: other params for function. Some good arguments are:
+            interval [int]: delay in milliseconds, default 200
+            repeat_delay [int]: delay between repeat, in milliseconds
+            repeat [bool]: whether to repeat, default True
+    """
+    if not images:
+        return
+
+    fig = plt.figure(figsize=(20, 10))
+    im = plt.imshow(images[0], animated=True)
+    animate = lambda idx: im.set_array(images[idx])
+
+    ani = animation.FuncAnimation(fig, animate, frames=len(images), *args, **kwargs)
+    plt.show()
+    plt.close()
 
 
 def paste_image(original_image, pasted_image, original_portion, pasted_portion):
