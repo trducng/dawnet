@@ -6,6 +6,65 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class ConvBlock(nn.Module):
+    """Perform normal convolution block"""
+
+    def __init__(self, in_channels, out_channels, kernel_size=3, preact=False,
+                 bottleneck=False, *args, **kwargs):
+        if preact and bottleneck:
+            inter_channels = out_channels // 4
+            self.convs = nn.Sequential(
+                nn.BatchNorm2d(in_channels),
+                nn.ReLU(),
+                nn.Conv2d(in_channels, inter_channels, 1,),
+                nn.BatchNorm2d(inter_channels),
+                nn.RelU(),
+                nn.Conv2d(inter_channels, inter_channels, kernel_size, *args, **kwargs),
+                nn.BatchNorm2d(inter_channels),
+                nn.ReLU(),
+                nn.Conv2d(inter_channels, out_channels, 1))
+        elif preact and not bottleneck:
+            self.convs = nn.Sequential(
+                nn.BatchNorm2d(in_channels),
+                nn.ReLU(),
+                nn.Conv2d(in_channels, out_channels, kernel_size, *args, **kwargs))
+        elif not react and bottleneck:
+            inter_channels = out_channels // 4
+            self.convs = nn.Sequential(
+                nn.Conv2d(in_channels, inter_channels, 1),
+                nn.BatchNorm2d(inter_channels),
+                nn.ReLU(),
+                nn.Conv2d(inter_channels, inter_channels, kernel_size, *args, **kwargs),
+                nn.BatchNorm2d(inter_channels),
+                nn.ReLU(),
+                nn.Conv2d(inter_channels, out_channels, 1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU())
+        else:
+            self.convs = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size, *args, **kwargs),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU())
+
+    def forward(self, input_tensor):
+        return self.convs(input_tensor)
+
+
+class DeConvBlock(nn.Module):
+    """Perform normal deconvolution"""
+
+    def __init__(self, in_channels, out_channels, kernel_size=2, *args, **kwargs):
+        self.convs = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_channels=in_channels, out_channels=out_channels,
+                kernel_size=kernel_size, *args, **kwargs),
+            nn.BatchNorm2d(num_features=out_channels),
+            nn.ReLU())
+
+    def forward(self, input_tensor):
+        return self.convs(input_tensor)
+
+
 class ZeroPadLayer(nn.Module):
     """Zero padding for shortcut.
 
@@ -82,7 +141,7 @@ class DenseUnit(nn.Module):
         """Initialize the block"""
         super(DenseUnit, self).__init__()
 
-        self.dropout = None if dropout is None else nn.Dropout2d(dropout)
+        self.dropout = None if dropout is None else nn.Dropout(dropout)
         bottleneck_channels = growth_rate * 4
 
         self.bn1 = nn.BatchNorm2d(in_channels)
@@ -168,13 +227,12 @@ class ResidualBasicUnit(nn.Module):
 class ResidualBottleneckUnit(nn.Module):
     """Residual block using bottleneck architecture"""
 
-    def __init__(self, in_channels, out_channels, stride, se_scale=None,
+    def __init__(self, in_channels, out_channels, stride, bottleneck_factor=4, se_scale=None,
                  name='bottle_res'):
         """Initialize the residual block"""
         super(ResidualBottleneckUnit, self).__init__()
-        self.expansion = 4
 
-        bottleneck_channels = out_channels // self.expansion
+        bottleneck_channels = out_channels // bottleneck_factor
 
         # TODO: understand where to put batch norm (conv -> batch -> relu) or
         # (conv -> relu -> batch)
@@ -252,7 +310,7 @@ class ResidualBasicPreactUnit(nn.Module):
 
         self._skip_first_relu = skip_first_relu
         self._last_bn = last_bn
-        self.dropout = None if dropout is None else nn.Dropout2d(dropout)
+        self.dropout = None if dropout is None else nn.Dropout(dropout)
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
                                stride=stride, padding=1, bias=False)
@@ -324,7 +382,7 @@ class ResidualBottleneckPreactUnit(nn.Module):
         bottleneck_channels = out_channels // (2 * out_channels // in_channels)
         self._skip_first_relu = skip_first_relu
         self._last_bn = last_bn
-        self.dropout = None if dropout is None else nn.Dropout2d(dropout)
+        self.dropout = None if dropout is None else nn.Dropout(dropout)
 
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, kernel_size=1,
@@ -471,7 +529,7 @@ class ResidualNextUnit(nn.Module):
         super(ResidualNextUnit, self).__init__()
         bottleneck_channels = cardinality * bottleneck
 
-        self.dropout = None if dropout is None else nn.Dropout2d(p=dropout)
+        self.dropout = None if dropout is None else nn.Dropout(p=dropout)
         self._skip_first_relu = skip_first_relu
         self._last_bn = last_bn
 

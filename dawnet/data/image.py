@@ -3,8 +3,10 @@
 # ==============================================================================
 import os
 import math
+from urllib.request import urlopen
 
 import cv2
+import numpy as np
 from imgaug import augmenters as iaa
 from imgaug import imgaug as ia
 from imgaug.parameters import (StochasticParameter, Deterministic, Choice,
@@ -22,6 +24,20 @@ import numpy.random as random
 from scipy.ndimage import rotate
 from skimage.morphology import skeletonize
 
+
+def download_image(url):
+    """Download an image to numpy array
+
+    # Arguments
+        url [str]: the url
+
+    # Returns
+        [np array]: the image
+    """
+    response = urlopen(url)
+    image = np.asarray(bytearray(response.read()), dtype=np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    return image
 
 def get_rectangle_vertices(pixels):
     """Given a list of pixels of a rectangle, retrieve the 4 rectangle corners
@@ -64,7 +80,7 @@ def show_images(image_list, label_list=None, max_columns=10, notebook=False):
     columns = min(max_columns, len(image_list))
     rows = math.ceil(len(image_list) / columns)
 
-    plt.figure(figsize=(20,10))
+    plt.figure(figsize=(40,20))
     for _idx, each_img in enumerate(image_list):
         plt.subplot(rows, columns, _idx+1)
         if label_list is not None:
