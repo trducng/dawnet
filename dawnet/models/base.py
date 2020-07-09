@@ -13,10 +13,10 @@ import numpy as np
 
 def get_ensembles(folder_path):
     """Get the ensemble model
-    
+
     # Arguments
         [folder_path]: the folder containing all models
-    
+
     # Returns
         [list of str]: list of checkpoint paths
     """
@@ -29,7 +29,7 @@ def get_ensembles(folder_path):
 
 def batch_infer(models, X, debug=False):
     """Batch infer using a collection of models
-    
+
     # Arguments
         models [list of perceive.BaseModel]: list of models that have `x_infer`
         X [consumable by `x_infer`]: an input data

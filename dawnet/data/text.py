@@ -52,7 +52,7 @@ def view_string_prediction(prediction, ground_truth, to_print=True,
                 content += color_func(each_result[0], 'green')
 
         content += color_func(' ==> ')
-        
+
         for each_result in result_pred:
             if each_result[1]:
                 content += color_func(each_result[0])

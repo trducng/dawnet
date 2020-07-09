@@ -28,7 +28,7 @@ class ConvBlock(nn.Module):
                 nn.BatchNorm2d(in_channels),
                 nn.ReLU(),
                 nn.Conv2d(in_channels, out_channels, kernel_size, *args, **kwargs))
-        elif not react and bottleneck:
+        elif not preact and bottleneck:
             inter_channels = out_channels // 4
             self.convs = nn.Sequential(
                 nn.Conv2d(in_channels, inter_channels, 1),

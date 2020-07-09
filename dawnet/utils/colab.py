@@ -1,7 +1,48 @@
 # Utility functions for Google colab support
 # @author: _john
 # =============================================================================
+import os
+import multiprocessing
 import subprocess
+import time
+
+
+def run_in_process(f, args):
+    """Run the function inside other process.
+
+    Useful not to block cell inside notebook.
+
+    # Args
+        f <function>: the function to run inside worker process
+        args <()>: tuple of parameters to pass into that function
+
+    # Returns
+        <{}>: the output result, can be accessed with 'result'
+        <Process>: the process, in case you want to set `.join()`
+    """
+    def wrapper():
+        pid = os.getpid()
+        print(f'Running process {pid}')
+        value = f(*args)
+        return_dict['result'] = value
+        print(f'Finished process {pid}')
+
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+
+    p = multiprocessing.Process(target=wrapper, args=(), daemon=True)
+    p.start()
+
+    return return_dict, p
+
+
+def is_ready(return_dict):
+    """Check if the process result is ready"""
+    if isinstance(return_dict, multiprocessing.managers.DictProxy):
+        if return_dict.get('result') is not None:
+            return True
+
+    return False
 
 
 def gpu_info():

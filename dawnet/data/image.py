@@ -6,12 +6,15 @@ import math
 from urllib.request import urlopen
 
 import cv2
+import matplotlib
 import numpy as np
 from imgaug import augmenters as iaa
 from imgaug import imgaug as ia
 from imgaug.parameters import (StochasticParameter, Deterministic, Choice,
     DiscreteUniform, Normal, Uniform)
-import matplotlib
+from IPython.display import display
+from ipywidgets import widgets, Box
+from PIL import Image
 
 if os.name == 'posix' and 'DISPLAY' not in os.environ:
     # 'agg' backend for headless server (not connected to any display)
@@ -80,13 +83,15 @@ def show_images(image_list, label_list=None, max_columns=10, notebook=False):
     columns = min(max_columns, len(image_list))
     rows = math.ceil(len(image_list) / columns)
 
-    plt.figure(figsize=(40,20))
+    plt.figure(figsize=(columns*5,rows*5))
     for _idx, each_img in enumerate(image_list):
         plt.subplot(rows, columns, _idx+1)
         if label_list is not None:
             plt.title(label_list[_idx])
         plt.imshow(each_img, cmap='gray')
 
+    plt.tight_layout()
+    plt.setp(plt.gcf().get_axes(), xticks=[], yticks=[])    # remove ticks
     if not notebook:
         plt.show()
 
@@ -793,3 +798,53 @@ def augment_image(image, color_bg=255, italicize=0, angle=0, pad_vertical=0,
             scale=gauss_noise * color_bg))
 
     return iaa.Sequential(augmentators).augment_image(image)
+
+
+def image_carousel(image_list):
+    """Construct image carousel for Jupyter Notebook
+
+    Example:
+        ```
+        from Ipython.display import display
+
+        buttons, output = image_carousel(image_list)
+        display(buttons)
+        display(output)
+        ```
+
+    # Args
+        image_list <[np array]>: list of images
+
+    # Returns
+        <Box>: ipywidgets box containing prev and next buttons
+        <Output>: ipywidgets output
+    """
+    prev_button = widgets.Button(description="Prev")
+    next_button = widgets.Button(description="Next")
+    current = {'current': 0}
+
+    output = widgets.Output()
+    with output:
+        img = image_list[current['current']]
+        display(Image.fromarray(img))
+
+
+    def on_prev(b):
+        with output:
+            current['current'] = (current['current'] - 1) % len(image_list)
+            img = image_list[current['current']]
+            output.clear_output()
+            display(Image.fromarray(img))
+
+    def on_next(b):
+        with output:
+            current['current'] = (current['current'] + 1) % len(image_list)
+            img = image_list[current['current']]
+            output.clear_output()
+            display(Image.fromarray(img))
+
+    prev_button.on_click(on_prev)
+    next_button.on_click(on_next)
+
+    return Box(children=[prev_button, next_button]), output
+

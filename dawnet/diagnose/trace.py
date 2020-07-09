@@ -28,9 +28,9 @@ from dawnet.models.convs import get_conv_input_shape
 from dawnet.utils.dependencies import get_pytorch_layers
 
 
-
-def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
-                    dilation=1):
+def trace_maxpool2d(
+    indices, output_map, kernel_size, stride=None, padding=0, dilation=1
+):
     """Find indices of acting input neurons
 
     Find the indices of neurons in the input that contribute to specified
@@ -66,8 +66,7 @@ def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
     if isinstance(indices, torch.Tensor):
         unmaxpool = nn.MaxUnpool2d(kernel_size, stride=stride, padding=padding)
         return unmaxpool(output_map, indices)
-    elif (isinstance(indices, tuple) or isinstance(indices, list)
-          and len(indices) == 2):
+    elif isinstance(indices, tuple) or isinstance(indices, list) and len(indices) == 2:
         y, x = indices
         # @TODO: this is basically wrong as we have not take into account the
         # value of `slide` != `kernel_size`
@@ -85,12 +84,14 @@ def trace_maxpool2d(indices, output_map, kernel_size, stride=None, padding=0,
                 indices_result.append((row, col))
         return indices_result
 
-    raise AttributeError('`indices` should be output feature map or a '
-                         'tuple of 2 ints (y, x)')
+    raise AttributeError(
+        "`indices` should be output feature map or a " "tuple of 2 ints (y, x)"
+    )
 
 
-def trace_conv2d(indices, output_shape, kernel_size, stride=None, padding=0,
-    dilation=1):
+def trace_conv2d(
+    indices, output_shape, kernel_size, stride=None, padding=0, dilation=1
+):
     """Find indices of acting input neuron
 
     @TODO: this `trace_conv2d` has not taken into account `dilation` argument
@@ -118,11 +119,12 @@ def trace_conv2d(indices, output_shape, kernel_size, stride=None, padding=0,
         stride = kernel_size
 
     if len(output_shape) != 2:
-        raise AttributeError('2D convolution must have 2D shape')
+        raise AttributeError("2D convolution must have 2D shape")
 
-                                                        # pylint: disable=E0632
+        # pylint: disable=E0632
     input_height, input_width = get_conv_input_shape(
-        output_shape, kernel_size, stride, padding)     # input feature map size
+        output_shape, kernel_size, stride, padding
+    )  # input feature map size
 
     # get the input patch, recalibrated by padding value
     y, x = indices
@@ -177,14 +179,16 @@ def trace(layer_idx, indices, output_shape, model):
         padding = layer.padding
         dilation = layer.dilation
         for each_index in indices:
-            result += trace_conv2d(each_index, output_shape, kernel_size,
-                stride, padding, dilation)
+            result += trace_conv2d(
+                each_index, output_shape, kernel_size, stride, padding, dilation
+            )
 
         return trace(
             layer_idx - 1,
             result,
             get_conv_input_shape(output_shape, kernel_size, stride, padding),
-            model)
+            model,
+        )
 
     else:
         return trace(layer_idx - 1, indices, output_shape, model)
@@ -217,7 +221,9 @@ def run_partial_model(model, layer_idx, input_x, preprocess=None):
             continue
 
         if isinstance(layer, nn.LSTM):
-            input_x = input_x.view(input_x.size(0), input_x.size(1) * input_x.size(2), input_x.size(3))
+            input_x = input_x.view(
+                input_x.size(0), input_x.size(1) * input_x.size(2), input_x.size(3)
+            )
             input_x = input_x.transpose(1, 2)
             input_x = input_x.transpose(0, 1).contiguous()
             input_x, _ = layer(input_x)
@@ -226,7 +232,7 @@ def run_partial_model(model, layer_idx, input_x, preprocess=None):
 
         if idx >= layer_idx:
             break
-        
+
         idx += 1
 
     return input_x
@@ -239,7 +245,7 @@ def predict_partial_model(model, layer_idx, input_x):
         model [torch.nn.Module]: the model
         layer_idx [int]: the starting index
         input_x [torch.Tensor]: a valid input to the layer
-    
+
     # Returns
         [torch.Tensor]: output logits
     """
@@ -250,13 +256,15 @@ def predict_partial_model(model, layer_idx, input_x):
 
         if idx >= layer_idx:
             if isinstance(layer, nn.LSTM):
-                input_x = input_x.view(input_x.size(0), input_x.size(1) * input_x.size(2), input_x.size(3))
+                input_x = input_x.view(
+                    input_x.size(0), input_x.size(1) * input_x.size(2), input_x.size(3)
+                )
                 input_x = input_x.transpose(1, 2)
                 input_x = input_x.transpose(0, 1).contiguous()
                 input_x, _ = layer(input_x)
             else:
                 input_x = layer(input_x)
-        
+
         idx += 1
 
     return input_x
@@ -278,8 +286,9 @@ def get_feature_maps(model, input_x):
             # skip for non-Pytorch class
             continue
 
-        if (isinstance(layer, tuple(get_pytorch_layers())) and
-                not isinstance(layer, tuple(get_pytorch_layers(conv=True)))):
+        if isinstance(layer, tuple(get_pytorch_layers())) and not isinstance(
+            layer, tuple(get_pytorch_layers(conv=True))
+        ):
             # stop when stepping into classifiers
             break
 
@@ -311,26 +320,34 @@ def get_most_activated_outputs(tensor, channel_dim=1, channel_idx=None):
     """
     if isinstance(channel_idx, int):
         if channel_dim == 1:
-            tensor = tensor[:,channel_idx,:,:]
+            tensor = tensor[:, channel_idx, :, :]
         elif channel_dim == -1 or channel_dim == 3:
-            tensor = tensor[:,:,:,channel_dim]
+            tensor = tensor[:, :, :, channel_dim]
         else:
-            raise AttributeError('invalid `channel_idx`, should be 1 or 3 but'
-                                 'receive {}'.format(channel_idx))
+            raise AttributeError(
+                "invalid `channel_idx`, should be 1 or 3 but"
+                "receive {}".format(channel_idx)
+            )
     larger_0_mask = tensor > 0
-                                                        # pylint: disable=E1101
-    quantile_75_mask = tensor > torch.kthvalue(
-        tensor.view(-1).cpu(),
-        int(0.75 * len(tensor.view(-1))))[0].item()
+    # pylint: disable=E1101
+    quantile_75_mask = (
+        tensor
+        > torch.kthvalue(tensor.view(-1).cpu(), int(0.75 * len(tensor.view(-1))))[
+            0
+        ].item()
+    )
 
     value_50_mask = tensor > (
-        ((torch.max(tensor) - torch.min(tensor)) * 0.50
-         + torch.min(tensor)).item())
+        ((torch.max(tensor) - torch.min(tensor)) * 0.50 + torch.min(tensor)).item()
+    )
 
     # [:,1:] to remove the batch channel
-    return (larger_0_mask
-            * quantile_75_mask
-            * value_50_mask).nonzero().cpu().data.numpy()[:,1:]
+    return (
+        (larger_0_mask * quantile_75_mask * value_50_mask)
+        .nonzero()
+        .cpu()
+        .data.numpy()[:, 1:]
+    )
 
 
 def collect_image_patches_for_neuron_activation(layer_idx, indices, model, X):
@@ -370,8 +387,7 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
 
     # get the most activated locations in the channel in the layer
     output_map = run_partial_model(model, layer_idx, X)
-    most_activated = get_most_activated_outputs(
-        output_map, 1, channel_idx=channel_idx)
+    most_activated = get_most_activated_outputs(output_map, 1, channel_idx=channel_idx)
 
     # get the patches and construct the mask
     X_np = X.squeeze().cpu().data.numpy()
@@ -380,15 +396,15 @@ def collect_image_patches_for_feature_map(layer_idx, channel_idx, model, X):
     for each_item in most_activated:
         indices = tuple(each_item)
         top, bottom, left, right = collect_image_patches_for_neuron_activation(
-            13, indices, model, X)
+            13, indices, model, X
+        )
         mask[top:bottom, left:right] = 1
-        results.append(255-X_np[top:bottom,left:right])
+        results.append(255 - X_np[top:bottom, left:right])
 
     return results, mask
 
 
-def view_3d_tensor(tensor, max_rows=None, max_columns=None,
-                   construct_widget=True):
+def view_3d_tensor(tensor, max_rows=None, max_columns=None, construct_widget=True):
     """Visualize 3D tensor by viewing groups of 2D images
 
     This function is used in conjunction with ipywidget. Suppose we have a
@@ -414,7 +430,8 @@ def view_3d_tensor(tensor, max_rows=None, max_columns=None,
 
     if len(tensor.shape) != 3:
         raise AttributeError(
-            'the tensor should be 3D shape, get {}'.format(len(tensor.shape)))
+            "the tensor should be 3D shape, get {}".format(len(tensor.shape))
+        )
 
     max_rows, max_columns = get_subplot_rows_cols(tensor)
     step = max_rows * max_columns
@@ -432,26 +449,30 @@ def view_3d_tensor(tensor, max_rows=None, max_columns=None,
         """
         fig.clf()
 
-        image_list = list(tensor[page*step:(page+1)*step])
+        image_list = list(tensor[page * step : (page + 1) * step])
         columns = min(max_columns, len(image_list))
         rows = math.ceil(len(image_list) / columns)
 
         for _idx, each_img in enumerate(image_list):
-            plot = fig.add_subplot(rows, columns, _idx+1)
-            plot.set_title('{}'.format(_idx + page*step))
-            plot.axis('off')
-            plot.imshow(each_img, cmap='gray')
+            plot = fig.add_subplot(rows, columns, _idx + 1)
+            plot.set_title("{}".format(_idx + page * step))
+            plot.axis("off")
+            plot.imshow(each_img, cmap="gray")
 
-        plt.subplots_adjust(
-            left=0, right=1, top=1, bottom=0, wspace=0.01, hspace=0.01)
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0.01, hspace=0.01)
         fig.show()
 
     if not construct_widget:
         return show_images
 
     page_slider = widgets.IntSlider(
-        min=0, max=math.ceil(tensor.shape[0]/step - 1), step=1, value=0,
-        description='Page:', layout=Layout(width='75%'))
+        min=0,
+        max=math.ceil(tensor.shape[0] / step - 1),
+        step=1,
+        value=0,
+        description="Page:",
+        layout=Layout(width="75%"),
+    )
     interact_manual(show_images, page=page_slider)
 
     return show_images
@@ -459,7 +480,7 @@ def view_3d_tensor(tensor, max_rows=None, max_columns=None,
 
 def view_feature_maps(model, X):
     """View model feature maps
-    
+
     # Arguments
         model [torch nn.Module]: the model
         X [torch Tensor]: a valid input to the model
@@ -470,6 +491,7 @@ def view_feature_maps(model, X):
     feature_maps = get_feature_maps(model, X)
 
     fig = plt.figure()
+
     def show_images(layer=0, page=0):
         """Show the image in `tensor`
 
@@ -478,44 +500,57 @@ def view_feature_maps(model, X):
         """
         fig.clf()
 
-        tensor = feature_maps[layer][2][0,:]
+        tensor = feature_maps[layer][2][0, :]
         max_rows, max_columns = get_subplot_rows_cols(tensor)
         step = max_rows * max_columns
 
-        image_list = list(tensor[page*step:(page+1)*step])
+        image_list = list(tensor[page * step : (page + 1) * step])
         columns = min(max_columns, len(image_list))
         rows = math.ceil(len(image_list) / columns)
 
-        fig.suptitle('Layer {} - Type {}'.format(
-            feature_maps[layer][0], feature_maps[layer][1].__name__),
-            fontsize=16)
+        fig.suptitle(
+            "Layer {} - Type {}".format(
+                feature_maps[layer][0], feature_maps[layer][1].__name__
+            ),
+            fontsize=16,
+        )
         for _idx, each_img in enumerate(image_list):
-            plot = fig.add_subplot(rows, columns, _idx+1)
-            plot.set_title('{}'.format(_idx + page*step))
-            plot.axis('off')
-            plot.imshow(each_img, cmap='gray')
+            plot = fig.add_subplot(rows, columns, _idx + 1)
+            plot.set_title("{}".format(_idx + page * step))
+            plot.axis("off")
+            plot.imshow(each_img, cmap="gray")
 
         plt.subplots_adjust(
-            left=0, right=1, top=0.9, bottom=0, wspace=0.01, hspace=0.01)
+            left=0, right=1, top=0.9, bottom=0, wspace=0.01, hspace=0.01
+        )
         fig.show()
 
     def update_num_pages(*args):
         """Change the number of pages as the layer changes"""
         layer = layer_slider.value
-        tensor = feature_maps[layer][2][0,:]
-        page_slider.max = math.ceil(tensor.shape[0] // np.prod(
-            get_subplot_rows_cols(tensor)) - 1)
+        tensor = feature_maps[layer][2][0, :]
+        page_slider.max = math.ceil(
+            tensor.shape[0] // np.prod(get_subplot_rows_cols(tensor)) - 1
+        )
 
-    tensor = feature_maps[0][2][0,:]
+    tensor = feature_maps[0][2][0, :]
     layer_slider = widgets.IntSlider(
-        min=0, max=len(feature_maps) - 1, step=1, value=0,
-        description='Layer:', layout=Layout(width='75%'))
+        min=0,
+        max=len(feature_maps) - 1,
+        step=1,
+        value=0,
+        description="Layer:",
+        layout=Layout(width="75%"),
+    )
     page_slider = widgets.IntSlider(
         min=0,
-        max=math.ceil(tensor.shape[0] / np.prod(
-            get_subplot_rows_cols(tensor)) - 1),
-        step=1, value=0, description='Page:', layout=Layout(width='75%'))
-    layer_slider.observe(update_num_pages, 'value')
+        max=math.ceil(tensor.shape[0] / np.prod(get_subplot_rows_cols(tensor)) - 1),
+        step=1,
+        value=0,
+        description="Page:",
+        layout=Layout(width="75%"),
+    )
+    layer_slider.observe(update_num_pages, "value")
     interact_manual(show_images, layer=layer_slider, page=page_slider)
 
     return show_images
