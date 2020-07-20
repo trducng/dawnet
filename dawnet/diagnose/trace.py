@@ -218,6 +218,7 @@ def run_partial_model(model, layer_idx, input_x, preprocess=None):
     idx = 0
     for _, layer in model.named_modules():
         if not isinstance(layer, tuple(get_pytorch_layers())):
+            # @TODO: smart, but the order is not guaranteed
             continue
 
         if isinstance(layer, nn.LSTM):

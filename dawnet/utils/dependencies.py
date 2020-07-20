@@ -10,62 +10,37 @@ import torch
 import torch.nn as nn
 
 
-# Listing of Pytorch modules
-MODULES = [
-    torch.nn.modules.conv,
-    torch.nn.modules.linear,
-    torch.nn.modules.activation,
-    torch.nn.modules.pooling,
-    torch.nn.modules.batchnorm,
-    torch.nn.modules.instancenorm,
-    torch.nn.modules.rnn
-]
-
-CONV_MODULES = [
-    torch.nn.modules.conv,
-    torch.nn.modules.activation,
-    torch.nn.modules.pooling,
-    torch.nn.modules.batchnorm,
-    torch.nn.modules.instancenorm
-]
-
-SKIP_LAYERS = set([
-    torch.nn.modules.module.Module,
-    torch.nn.parameter.Parameter
+# module classes but are not exactly layer
+NON_LAYER_MODULES = set([
+    "Module", "ModuleDict", "ModuleList",
+    "Parameter", "ParameterDict", "ParameterList",
+    "DataParallel", "Sequential"
 ])
 
 # All valid Pytorch layers
 VALID_LAYERS = []
-for each_module in MODULES:
-    for _, obj in inspect.getmembers(each_module):
-        if inspect.isclass(obj):
-            VALID_LAYERS.append(obj)
-VALID_LAYERS = set(VALID_LAYERS).difference(SKIP_LAYERS)
+for name, obj in inspect.getmembers(nn):
+    if not inspect.isclass(obj):
+        continue
 
-# All valid Pytorch convolutional layers
-VALID_CONV_LAYERS = []
-for each_module in CONV_MODULES:
-    for _, obj in inspect.getmembers(each_module):
-        if inspect.isclass(obj):
-            VALID_CONV_LAYERS.append(obj)
-VALID_CONV_LAYERS = set(VALID_CONV_LAYERS).difference(SKIP_LAYERS)
+    if name in NON_LAYER_MODULES:
+        continue
+
+    if 'loss' in name.lower():
+        continue
+
+    VALID_LAYERS.append(obj)
 
 
-def get_pytorch_layers(conv=False):
+def get_pytorch_layers():
     """Get valid pytorch layers
 
     This function retrieve all classes from `torch.nn.modules...`.
 
-    # Arguments
-        conv [bool]: whether to return convolution-related layers only
-
     # Returns:
         [set of class objects]: list of Pytorch layers
     """
-    if conv:
-        return VALID_CONV_LAYERS
-
-    return VALID_LAYERS
+    return tuple(VALID_LAYERS)
 
 
 def print_md(string):
@@ -83,7 +58,7 @@ def colored_md(string, color='black'):
     # Arguments
         string [str]: the string to construct
         color [str]: the color used for CSS `style` color
-    
+
     # Returns
         [str]: the constructed string with desired format
     """
