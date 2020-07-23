@@ -32,7 +32,7 @@ class MetaAgent(type):
     + store the functions in renamed attributes
     + call the functions
     + add loss calculation into model definition
-    - 
+    + add sensible optimization code
     """
 
     def __new__(cls, name, bases, attrs, **kwargs):
@@ -93,7 +93,7 @@ class Agent(metaclass=MetaAgent):
             if isinstance(module, nn.Module):
                 module.eval()
 
-    def train(self):
+    def train(self, current):
         """Alias `nn.Module.train`"""
         for each_callable in self.__callables__:
             module = getattr(self, each_callable)
@@ -112,6 +112,28 @@ class Agent(metaclass=MetaAgent):
             return modules[0](*args, **kwargs)
 
         raise NotImplementedError('need subclass if there are other than 1 `nn.Module`')
+
+    def learn(self, *args, **kwargs):
+        modules, optimizers = [], []
+        for each_callable in self.__callables__:
+            module = getattr(self, each_callable)
+            if isinstance(module, nn.Module):
+                modules.append(module)
+                continue
+            if isinstance(module, optim.Optimizer):
+                optimizers.append(module)
+                continue
+
+        if len(modules) != 1 or len(optimizers) != 1:
+            raise NotImplementedError('need subclass if there are other than 1 '
+                                      '`nn.Module`')
+
+        loss = modules[0].loss(*args, **kwargs)
+        optimizers[0].zero_grad()
+        loss.backward()
+        optimizers[0].step()
+
+        return loss.detach()
 
     def wake(self, soul=None):
         """Initialize all modules"""
