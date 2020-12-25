@@ -20,7 +20,9 @@ class Hyperparams(dict):
     """Extend dictionary to allow dot notation"""
 
     def __getattr__(self, key):
-        return self[key]
+        if key in self:
+            return self[key]
+        raise AttributeError("The object does not have attribute \"{key}\"")
 
     def __setattr__(self, key, value):
         self[key] = value
@@ -72,7 +74,7 @@ class Agent(metaclass=MetaAgent):
 
     def __init__(self, params=None, name=None):
         params = {} if params is None else params
-        self.hparams.params = Hyperparams(params)
+        self.hparams.update(params)
         self.name = name
 
     def __getattr__(self, name):
@@ -136,26 +138,63 @@ class Agent(metaclass=MetaAgent):
         return loss.detach()
 
     def wake(self, soul=None):
-        """Initialize all modules"""
+        """Initialize all modules
 
-        state = None
-        if soul is not None:
-            state = torch.load(soul, map_location='cpu')
+        This method automatically initiates:
+            - all modules that have `load_state_dict`
+            - hparams
+        """
+        # initiate all modules
+        for key in self.__callables__:
+            module = getattr(self, f'__func_{key}', None)
+            if module is not None:
+                module = module()
+                setattr(self, key, module)
 
-        for each_callable in self.__callables__:
-            module = getattr(self, f'__func_{each_callable}')()
+        if soul is None:
+            return
 
-            if isinstance(module, nn.Module):
-                if state is not None:
-                    module.load_state_dict(state['model'])    # TODO: change the name of model
-                if self.hparams.params.cuda is True:
-                    module = module.cuda()
+        # load from previous rest
+        state = torch.load(soul, map_location='cpu')
+        for key, value in state.items():
+            if key == 'hparams':
+                self.hparams.update(value)
+                continue
 
-            elif isinstance(module, optim.Optimizer):
-                if state is not None:
-                    module.load_state_dict(state['optim'])
+            if key in self.__callables__:
+                module = getattr(self, key, None)
+                if isinstance(module, (nn.Module, optim.Optimizer)):
+                    module.load_state_dict(value)
+                continue
 
-            setattr(self, each_callable, module)
+            # free style values
+            setattr(self, key, value)
+
+    def rest(self, soul):
+        """Let the agent rest
+
+        This method will automatically save:
+            - all modules that have state_dict
+            - hparams
+        """
+        state = {}
+        for attr_str in dir(self):
+            attr = getattr(self, attr_str)
+            if attr_str.startswith('__'):
+                # ignore attr like __dict__, __doc__...
+                continue
+
+            if hasattr(attr, 'state_dict'):
+                state[attr_str] = attr.state_dict()
+                continue
+
+            if callable(attr):
+                continue
+
+            state[attr_str] = attr
+
+        torch.save(state, soul)
+
 
 class AgentOld(nn.Module):
     """Base class provides perception interface
