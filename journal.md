@@ -303,7 +303,7 @@ To explore, we build a mechanism to see model output if we interfere with interm
 
 |Start Date|End Date  |
 |----------|----------|
-|2019-01-06|2018-01-08|
+|2019-01-06|2019-01-08|
 
 ## Description
 
@@ -339,4 +339,61 @@ Keep in mind:
 Observation with CTC loss:
 - the loss is unstable, moving from -1 to 0 to 1 along a normed distance result in a transition from chaos to sensible to chaos
 - none of the observing point along the way provides the correct answer
-- as a result, it is not possible to use weight jitter testing using this method for sequence problem
+- as a result, it is not possible to use weight jitter testing using this method for sequence problem.
+
+
+----------------------------------------
+# Make Agent's ability to use data flexibly
+
+|Start Date|End Date  |
+|----------|----------|
+|2020-07-25|2020-07-26|
+
+## Description
+
+Reproducibility requires model to be run on a wide range of datasets, in different scenarios, during training and/or evaluation. The current model packaging method typically bundles the model with DataLoader, that is hard-coded to run on a specific dataset. If you want to run the model on a randomly-selected data, you have to go through the dataset definintion phase, hacking your way until you process that random data enough into a format that can be consumed by the model.
+
+I believe much of that process can be automated if we rethink the role of data and incorporate it smartly to the training and evaluation process.
+
+Target:
+- data can be batched for training and inference (to get fast data)
+ + still use the same `Dataset` and `DataLoader` models
+- all observation can be augmented:
+ + the augmentation function is declared inside the model
+- user can run prediction for random data with minimal effort
+ + add the `is_valid_action` and `is_valid_observation` functionalities
+ + the observation modification step is handled inside Agent
+ + the Dataloader is dynamically constructed inside Agent
+- data formulation is model-agnostic.
+ + the `Environment` class is supposed to be model agnostic.
+ + data augmentation, input/output manipulation, batching of data is declared inside agent
+ + TODO: might need a mechanism to automatically add those augmentation... from environment
+
+Mentor is the ones who do the evaluation, using information from:
+- Environment: can switch between environment
+- Agent: expose the method to make prediction
+
+Should be tested and applied to several projects before being sure that it can work in intelligence researching in general.
+
+System design:
+- The environment contains:
+ + `Dataset`
+ + `is_valid_action`
+ + `is_valid_observation`
+- The agent contains:
+ + any observation and input augmentation methods
+ + batching
+- During training:
+ + Dataloader creation:
+  . Initialize the dataloader call
+  . Create a proxy Dataset that wraps around the Environment's dataset, combined with
+    the input and label processing defined by the agent
+ + For each iteration: (1) dataloader gets observations and actions, (2) the agent learns using `.learn`
+- During inference:
+ + For each iteration: (1) dataset prepare suitable indices, (2) create dataloader, (3) dataloader gets observation and actions, (4) dataset compute correct/incorrect, (5) the mentor logs
+- A good module should be able to work with:
+ + Meta-learning
+ + Model distillation, quantization
+ + Evolution
+ + Reinforcement learning problem
+- Can use model card for declarative definition

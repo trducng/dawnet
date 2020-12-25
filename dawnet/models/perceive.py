@@ -27,12 +27,7 @@ class Hyperparams(dict):
 
 
 class MetaAgent(type):
-    """
-    TODO:
-    + store the functions in renamed attributes
-    + call the functions
-    + add loss calculation into model definition
-    + add sensible optimization code
+    """Meta-class for Agent to re-organize agent attributes during object creation
     """
 
     def __new__(cls, name, bases, attrs, **kwargs):
@@ -40,7 +35,7 @@ class MetaAgent(type):
         # create a default `hparams` that contains hyperparams
         hparams = Hyperparams()
         if 'hparams' in attrs:
-            if not isinstance(attrs['hparams'], dawnet.Hyperparams):
+            if not isinstance(attrs['hparams'], Hyperparams):
                 raise AttributeError(
                     f'`hparams` should has type `Hyperparams`, instead {type(attrs["hparams"])}')
             hparams = Hyperparams(attrs['hparams'])
@@ -55,7 +50,7 @@ class MetaAgent(type):
         new_attrs = {}
         for name, value in attrs.items():
 
-            if isinstance(value, dawnet.Hyperparams):
+            if isinstance(value, Hyperparams):
                 # consolidate into hyperparameters
                 if name == 'hparams':
                     continue
@@ -114,6 +109,11 @@ class Agent(metaclass=MetaAgent):
         raise NotImplementedError('need subclass if there are other than 1 `nn.Module`')
 
     def learn(self, *args, **kwargs):
+        # @TODO: should do some data processing here (can be with augmentation...)
+        # the data processing and getting data can be specified based on the
+        # environment
+        # @TODO: does it introduce complication to users? It will eb if the definition
+        # of the environment is complicated and not intuitive for them to define
         modules, optimizers = [], []
         for each_callable in self.__callables__:
             module = getattr(self, each_callable)
@@ -176,7 +176,7 @@ class AgentOld(nn.Module):
 
     def __init__(self, params=None, recollection=None, name=None):
         """Initialize the object"""
-        super(Agent, self).__init__()
+        super(AgentOld, self).__init__()
 
         self.params = params
         self.recollection = recollection
@@ -185,7 +185,6 @@ class AgentOld(nn.Module):
         if name is None:
             name = get_random_name()
 
-        class_name = self.__class__.__name__
         now = datetime.now().strftime('%y%m%d')
         self.name = f'{self.__class__.__name__}**{name}**{now}'
 
