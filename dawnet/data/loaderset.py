@@ -28,7 +28,7 @@ class FilteredDataset(Dataset):
 
 
 class FilterMixin:
-    """Improved dataloader with additional functionalities.
+    """Improved dataloader with filtering functionalities.
 
     Additional functionalities:
         - Allow filtering data based on some conditions
@@ -56,7 +56,7 @@ class FilterMixin:
 
         if isinstance(names, str):
             names = [names]
-        
+
         if not hasattr(self, "_filter"):
             self._filter = {}
 
@@ -82,11 +82,14 @@ class FilterMixin:
         to_filter = [_ for _ in to_filter if _[0] not in final_datasets]
         indices = defaultdict(list)
         if to_filter:
+            # TODO (start) heavy processing if there are a lot of images
             for idx, each_item in enumerate(self):
+                # TODO heavy processing if there are a lot of conditions
                 for name, encoded_name, condition in to_filter:
                     if condition(each_item):
                         indices[name].append(idx)
                         break
+            # TODO (end) heavy processing
 
             for name, encoded_name, condition in to_filter:
                 self._filter[encoded_name] = indices[name]

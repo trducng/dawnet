@@ -37,9 +37,13 @@ class MetaAgent(type):
         # create a default `hparams` that contains hyperparams
         hparams = Hyperparams()
         if 'hparams' in attrs:
-            if not isinstance(attrs['hparams'], Hyperparams):
+            if not isinstance(
+                attrs['hparams'],
+                (Hyperparams, dawnet.models.perceive.Hyperparams)
+            ):
                 raise AttributeError(
-                    f'`hparams` should has type `Hyperparams`, instead {type(attrs["hparams"])}')
+                    f'`hparams` should has type `Hyperparams`, instead '
+                    '{type(attrs["hparams"])}')
             hparams = Hyperparams(attrs['hparams'])
 
         if 'params' in attrs:
@@ -90,7 +94,7 @@ class Agent(metaclass=MetaAgent):
             if isinstance(module, nn.Module):
                 module.eval()
 
-    def train(self, current):
+    def train(self):
         """Alias `nn.Module.train`"""
         for each_callable in self.__callables__:
             module = getattr(self, each_callable)
@@ -131,24 +135,36 @@ class Agent(metaclass=MetaAgent):
                                       '`nn.Module`')
 
         loss = modules[0].loss(*args, **kwargs)
+        print(loss.item())
         optimizers[0].zero_grad()
         loss.backward()
         optimizers[0].step()
 
         return loss.detach()
 
-    def wake(self, soul=None):
+    def wake(self, soul=None, cuda=None):
         """Initialize all modules
 
         This method automatically initiates:
             - all modules that have `load_state_dict`
             - hparams
+
+        # Args
+            soul <str>: path that stores state of the agent. If not provided,
+                just initiate the agent
+            cuda <bool>: whether to load model into gpu. If None, load to GPU if the
+                system has GPU
         """
+        if cuda is None:
+            cuda = torch.cuda.is_available()
+
         # initiate all modules
         for key in self.__callables__:
             module = getattr(self, f'__func_{key}', None)
             if module is not None:
                 module = module()
+                if cuda and hasattr(module, 'cuda'):
+                    module.cuda()
                 setattr(self, key, module)
 
         if soul is None:
@@ -163,8 +179,12 @@ class Agent(metaclass=MetaAgent):
 
             if key in self.__callables__:
                 module = getattr(self, key, None)
-                if isinstance(module, (nn.Module, optim.Optimizer)):
+                if isinstance(module, nn.Module):
                     module.load_state_dict(value)
+
+                if isinstance(module, optim.Optimizer):
+                    module.load_state_dict(value)
+
                 continue
 
             # free style values
@@ -176,6 +196,9 @@ class Agent(metaclass=MetaAgent):
         This method will automatically save:
             - all modules that have state_dict
             - hparams
+
+        # Args
+            soul <str>: path to store state of the agent
         """
         state = {}
         for attr_str in dir(self):

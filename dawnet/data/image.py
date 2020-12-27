@@ -83,7 +83,7 @@ def show_images(image_list, label_list=None, max_columns=10, notebook=False):
     columns = min(max_columns, len(image_list))
     rows = math.ceil(len(image_list) / columns)
 
-    plt.figure(figsize=(columns*5,rows*5))
+    plt.figure(figsize=(columns*5,rows*5), facecolor='white')
     for _idx, each_img in enumerate(image_list):
         plt.subplot(rows, columns, _idx+1)
         if label_list is not None:
