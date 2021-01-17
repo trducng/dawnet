@@ -86,7 +86,7 @@ class FilterMixin:
             for idx, each_item in enumerate(self):
                 # TODO heavy processing if there are a lot of conditions
                 for name, encoded_name, condition in to_filter:
-                    if condition(each_item):
+                    if condition(idx, each_item):
                         indices[name].append(idx)
                         break
             # TODO (end) heavy processing

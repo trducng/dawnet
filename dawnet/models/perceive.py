@@ -135,7 +135,6 @@ class Agent(metaclass=MetaAgent):
                                       '`nn.Module`')
 
         loss = modules[0].loss(*args, **kwargs)
-        print(loss.item())
         optimizers[0].zero_grad()
         loss.backward()
         optimizers[0].step()
