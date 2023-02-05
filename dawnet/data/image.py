@@ -4,6 +4,7 @@
 import os
 import math
 from urllib.request import urlopen
+from typing import List, Union
 
 import cv2
 import matplotlib
@@ -61,30 +62,31 @@ def get_rectangle_vertices(pixels):
 
 
 ## Jupyter notebooks
-def show_images(image_list, label_list=None, max_columns=10, notebook=False):
-    """Show list of images
+def show_images(images, label_list=None, max_columns=10, show=True, output=None):
+    """Show grid of images
 
-    # Arguments
-        image_list [list of np array]: list of images
-        label_list [list of strings]: list of labels
-        max_columns [int]: the maximum number of images to view side-by-side
-        notebook [bool]: whether this function is called inside a notebook
+    Args:
+        image_list <[np array]>: list of images
+        label_list <[str]>: list of labels
+        max_columns <int>: the maximum number of images to view side-by-side
+        show <bool>: whether this function is called inside a notebook
+        output <str>: if set, save the result to this path
     """
     if label_list is not None:
         if not isinstance(label_list, list):
             raise ValueError('`label_list` should be list')
-        if len(image_list) != len(label_list):
+        if len(images) != len(label_list):
             raise ValueError(
-                '`image_list` should have the same length with `label_list`')
+                '`images` should have the same length with `label_list`')
 
-    if not isinstance(image_list, list):
-        image_list = [image_list]
+    if isinstance(images, np.ndarray):
+        images = [images[idx] for idx in range(images.shape[0])]
 
-    columns = min(max_columns, len(image_list))
-    rows = math.ceil(len(image_list) / columns)
+    columns = min(max_columns, len(images))
+    rows = math.ceil(len(images) / columns)
 
     plt.figure(figsize=(columns*5,rows*5), facecolor='white')
-    for _idx, each_img in enumerate(image_list):
+    for _idx, each_img in enumerate(images):
         plt.subplot(rows, columns, _idx+1)
         if label_list is not None:
             plt.title(label_list[_idx])
@@ -92,8 +94,11 @@ def show_images(image_list, label_list=None, max_columns=10, notebook=False):
 
     plt.tight_layout()
     plt.setp(plt.gcf().get_axes(), xticks=[], yticks=[])    # remove ticks
-    if not notebook:
+    if show:
         plt.show()
+    if output:
+        plt.savefig(output)
+        plt.close()
 
 
 def show_image_ascii(image, bgr=False):
@@ -199,9 +204,9 @@ def get_subplot_rows_cols(tensor, fixed_rows=None, fixed_cols=None):
 
     condition  columns   rows
     == 1       -> 5        5
-    <= 2        -> 4        4
-    <= 4        -> 3        4
-    <= 6        -> 2        4
+    <= 2       -> 4        4
+    <= 4       -> 3        4
+    <= 6       -> 2        4
                   1        4
 
     # Argument

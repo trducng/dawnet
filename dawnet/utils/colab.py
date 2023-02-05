@@ -4,7 +4,6 @@
 import os
 import multiprocessing
 import subprocess
-import time
 
 
 def run_in_process(f, args):
@@ -20,15 +19,15 @@ def run_in_process(f, args):
         <{}>: the output result, can be accessed with 'result'
         <Process>: the process, in case you want to set `.join()`
     """
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+
     def wrapper():
         pid = os.getpid()
         print(f'Running process {pid}')
         value = f(*args)
         return_dict['result'] = value
         print(f'Finished process {pid}')
-
-    manager = multiprocessing.Manager()
-    return_dict = manager.dict()
 
     p = multiprocessing.Process(target=wrapper, args=(), daemon=True)
     p.start()
