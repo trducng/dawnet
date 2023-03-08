@@ -9,6 +9,18 @@ What does that means:
     + view model statistics
     + tinkering with the data and see what happens at the result (top-k result)
 - Inference must be constructed inside the model, with the input is the most basic data point (thinking of a complete stranger who needs to use your model, that person will not know anything about the nit-picks of your models and your data, they only have a data point and want to see the result coming out of your model)
+- **Encyclopedia of AI**
+
+# Behavorial objectives
+
+- The most comprehensive encyclopedia of 
+- Can compare the difference between 
+- Very quicklly incorporate new techniques from the literature
+- So fast, can run with the most accelerator advancement, can run distributed
+  training, best engineered library
+- Can easily do experiments, debug, tweaking the input/output to examine model
+  behavior
+- Design decision should be both composable and inheritable 
 
 # Requirements
 

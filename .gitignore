@@ -16,3 +16,6 @@ __pycache__
 .idea/**
 *.pbxproj
 *.xcworkspacedata
+
+# vim
+Session.vim

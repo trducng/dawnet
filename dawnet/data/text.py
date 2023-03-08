@@ -10,8 +10,7 @@ from termcolor import colored
 from dawnet.utils.dependencies import print_md, colored_md
 
 
-def view_string_prediction(prediction, ground_truth, to_print=True,
-    notebook=True):
+def view_string_prediction(prediction, ground_truth, to_print=True, notebook=True):
     """Prettify string prediction
 
     Incorrect characters in the prediction will be marked red, while correct

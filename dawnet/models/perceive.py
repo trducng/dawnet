@@ -1,17 +1,15 @@
 # Basic interface for a model
 # @author: John
 # =============================================================================
-import math
-import os
-import warnings
-from datetime import datetime
+import uuid
+from collections import defaultdict
+from typing import Dict, List
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 import dawnet
-from dawnet.training.hyper import SuperConvergence
 from dawnet.utils.dependencies import get_pytorch_layers
 from dawnet.utils.names import get_random_name
 
@@ -75,7 +73,7 @@ class MetaAgent(type):
 
 
 class Agent(metaclass=MetaAgent):
-
+    """An AI agent"""
     def __init__(self, params=None, name=None):
         params = {} if params is None else params
         self.hparams.update(params)
@@ -218,7 +216,7 @@ class Agent(metaclass=MetaAgent):
         torch.save(state, soul)
 
 
-class AgentOld(nn.Module):
+class Module(nn.Module):
     """Base class provides perception interface
 
     Think of this class as human's perception and tuition. The perception is
@@ -234,20 +232,11 @@ class AgentOld(nn.Module):
     Normal flow when evaluation
         x_initialize ---> x_load ---> x_infer
     """
+    _hooks_def = {}
 
-    def __init__(self, params=None, recollection=None, name=None):
-        """Initialize the object"""
-        super(AgentOld, self).__init__()
-
-        self.params = params
-        self.recollection = recollection
-
-        # get the name
-        if name is None:
-            name = get_random_name()
-
-        now = datetime.now().strftime('%y%m%d')
-        self.name = f'{self.__class__.__name__}**{name}**{now}'
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._hooks = defaultdict(dict)
 
     def switch_forward_function(self, forward_fn=None):
         """Switch the forward function
@@ -380,93 +369,27 @@ class AgentOld(nn.Module):
 
         return state
 
-    # _x_ interfaces
-    def x_initialize(self, *args, **kwargs):
-        """Initialize the agent's structure"""
-        raise NotImplementedError('`x_initialize` should be subclassed')
+    def register_hook(self, name, fn) -> List[str]:
+        """Register hook with desired name and function"""
+        result = []
+        if name in self._hooks_def:
+            id_ = uuid.uuid4().hex
+            self._hooks[name][id_] = fn
+            result.append(id_)
 
-    def x_learn(self, *args, **kwargs):
-        """Learn from a minibatch of data"""
-        raise NotImplementedError('`x_learn` should be subclassed')
+        for module in self.children():
+            if isinstance(module, Module):
+                result += module.register_hook(name, fn)
 
-    def x_train(self, *args, **kwargs):
-        """Train from a dataset"""
-        raise NotImplementedError('`x_train` should be subclassed')
+        return result
 
-    def x_infer(self, *args, **kwargs):
-        """Infer the output from the input data"""
-        raise NotImplementedError('`x_infer` should be subclassed')
+    def run_hook(self, name, kwargs) -> Dict:
+        """Run hook"""
+        if name in self._hooks:
+            for fn in self._hooks[name].values():
+                kwargs = fn(**kwargs)
 
-    def x_test(self, *args, **kwargs):
-        """Perform testing"""
-        raise NotImplementedError('x_test` should be subclassed')
-
-    def x_validate(self, *args, **kwargs):
-        """Performance testing"""
-        raise NotImplementedError('`x_validate` should be subclassed')
-
-    def x_load(self, path):
-        """Load the saved model
-
-        This loading should be constructed, so that the using of agent is
-        self-contained for inference, .i.e. only the saved_path is necessary
-        in order for the agent to infer and continue training.
-
-        # Arguments
-            path [str]: the path to saved model
-        """
-        print('Loading from {}...'.format(path))
-        state = torch.load(path)
-
-        # call user-defined updates
-        self.load_dict(state)
-
-        if state['model'] != self.__class__.__name__:
-            print(
-                ':WARNING: incompatible model, this is {} but load {}'
-                .format(self.__class__.__name__, state['model']))
-
-        self.name = state['name']
-        self.history = state['history']
-        self.load_state_dict(state['state_dict'])
-        self.training_iteration = state['training_iteration']
-        self.super_converge_flag = state['super_converge_flag']
-
-        if self.super_converge_flag:
-            self.super_converge_flag = False
-
-            self.super_converge_ensemble_folder = (
-                state['super_converge_ensemble_folder'])
-            self.super_converge(
-                max_lr=10, base_lr=4, stepsize=10,
-                patience=10, omega=0.1, better_as_larger=True,  # dummy var
-                ensemble_folder=state['super_converge_ensemble_folder'])
-            self.lr_scheduler.load_state_dict(state['lr_scheduler'])
-
-            self.super_converge_flag = True
-
-    def x_save(self, outpath, other_name=None):
-        """Save the agent's state"""
-        state = self._get_save_state()
-
-        filepath = (
-            os.path.join(outpath, '{}.john'.format(self.name))
-            if other_name is None
-            else os.path.join(
-                outpath, '{}_{}.john'.format(self.name, other_name))
-        )
-
-        try:
-            torch.save(state, filepath)
-        except KeyboardInterrupt as error:
-            to_kill = input(
-                'Currently saving state, killing now might '
-                'destroy all results. Kill? [y/N]: ')
-            if to_kill.lower() != 'y':
-                torch.save(state,
-                           os.path.join(outpath, '{}.john'.format(self.name)))
-            else:
-                raise error
+        return kwargs
 
 
 class DataParallel(nn.DataParallel):

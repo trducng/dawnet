@@ -5,7 +5,6 @@ import glob
 import os
 from collections import defaultdict
 
-import torch.nn as nn
 import torch
 import numpy as np
 
