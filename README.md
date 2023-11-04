@@ -45,3 +45,17 @@ Dawnet requires `pytorch` and `opencv` to work properly. Since many distribution
 # Data
 
 Model is not the only part in creating intelligent system. Data plays a vital role in this process too. A lot of time, playing around with data, seeing how the model behaves when data is tweak a little bit can provide crucial insights for model improvement. Hence, data manipulation must be made easy to use.
+
+## Good engineering resources:
+
+- [timm](https://github.com/huggingface/pytorch-image-models)
+- accelerate
+- [composer](https://docs.mosaicml.com/en/v0.12.1/) from MosaicML: to train
+  neural networks faster and cheapter.
+- [colossalAI](https://github.com/hpcaitech/ColossalAI): to train large AI
+  models cheaper and faster.
+- [opendelta](https://github.com/thunlp/OpenDelta) to make model composible
+- [nvprof](https://docs.nvidia.com/cuda/profiler-users-guide/) for CUDA
+  profiling
+- [paperswithcode concepts](https://paperswithcode.com/methods/area/general):
+  very good to refer for implementation

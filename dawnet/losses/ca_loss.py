@@ -25,6 +25,8 @@ class CALoss(nn.Module):
         self.lpips.eval()
 
     def forward(self, model, results, phase="train"):
+        # TODONEXT
+        # the use of `results` aren't good to be portable
         cells = results["output_cells"]
         hidden = model.get_hidden(cells)
         output = results["output_img"]

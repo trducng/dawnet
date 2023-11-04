@@ -219,7 +219,7 @@ class Agent(metaclass=MetaAgent):
 class Module(nn.Module):
     """Base class provides perception interface
 
-    Think of this class as human's perception and tuition. The perception is
+    Think of this class as human's perception and intuition. The perception is
     provided with some external stimuli, then automatically and unconsiously
     links those stimuli to some pattern.
 

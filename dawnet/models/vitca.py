@@ -796,6 +796,33 @@ from typing import Any
 class LitViTCA(pl.LightningModule):
     def __init__(self):
         super().__init__()
+        # TODONEXT
+        # Would generally want to refactor the VitCA experiments to organize it
+        # appropriately: (1) have test to ensure everything working well,
+        # (2) independent enough to not unexpectedly change behavior, (3) can be quickly
+        # reused, (4) knowledge are accumulated.
+        #
+        # - should be able to config the model
+        # - essentially each LightningModule is the whole experiment, where you define
+        # the totality of both the model[s] and how they are trained with the data.
+        # - use `norm_grad` in LitViTCA version
+        # - use `update_pools` in LitViTCA version
+        # - adjust checkpoint frequency
+        # - define the expected input (e.g. it's unclear to decide the format of the
+        # input), similarly with the output.
+        # - provide code to quickly copy code to a new folder, to quickly setup
+        # experimentation environment
+        # - exploit the `forward()` to do normal inference
+        # - make use of Lightning's training_step, validation_step
+        # - not directly relating to LitViTCA, but you might want to encapsulate the
+        # optimization, backprop process into this module
+        # - need to handle config interdependency (e.g. image size correlates to
+        # the layer input dim)
+        # - the LitViTCA is not the encapsulation of the whole experiment, because
+        # you cannot swap data. As a result, the config for the experiment will have
+        # data-related config that should be stored and does not relate to the
+        # LightningModule
+        #   - It means we would still want to use Hydra and its way of initiating model
         self.model = ViTCA(
             depth=1,
             heads=4,
@@ -808,6 +835,8 @@ class LitViTCA(pl.LightningModule):
             embed_dropout=0.0,
             device="cuda:0"
         )
+        # TODONEXT
+        # it's nice to be able to switch the loss
         self.loss = CALoss(rec_factor=1e2, overflow_factor=1e2)
         self.x_pool = []
         self.y_pool = []
