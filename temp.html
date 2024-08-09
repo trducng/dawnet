@@ -1,0 +1,85 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+          "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+
+<head>
+    <meta http-equiv="Content-Type"
+          content="text/html; charset=utf-8" />
+    <title></title>
+    <style type="text/css">
+        table.diff {font-family:Courier; border:medium;}
+        .diff_header {background-color:#e0e0e0}
+        td.diff_header {text-align:left}
+        .diff_next {background-color:#c0c0c0}
+        .diff_add {background-color:#aaffaa}
+        .diff_chg {background-color:#ffff77}
+        .diff_sub {background-color:#ffaaaa}
+    </style>
+</head>
+
+<body>
+    
+    <table class="diff" id="difflib_chg_to2__top"
+           cellspacing="0" cellpadding="0" rules="groups" >
+        <colgroup></colgroup> <colgroup></colgroup> <colgroup></colgroup>
+        <colgroup></colgroup> <colgroup></colgroup> <colgroup></colgroup>
+        
+        <tbody>
+            <tr><td class="diff_next" id="difflib_chg_to2__0"><a href="#difflib_chg_to2__0">f</a></td><td class="diff_header" id="from2_1">1</td><td nowrap="nowrap">norm&nbsp;=&nbsp;transforms.Normalize(mean=[0.485,&nbsp;0.456,&nbsp;0.406],&nbsp;std=[0.229,&nbsp;0.224,&nbsp;0.225])</td><td class="diff_next"><a href="#difflib_chg_to2__0">f</a></td><td class="diff_header" id="to2_1">1</td><td nowrap="nowrap">norm&nbsp;=&nbsp;transforms.Normalize(mean=[0.485,&nbsp;0.456,&nbsp;0.406],&nbsp;std=[0.229,&nbsp;0.224,&nbsp;0.225])</td></tr>
+            <tr><td class="diff_next" id="difflib_chg_to2__1"></td><td class="diff_header" id="from2_2">2</td><td nowrap="nowrap">opt_image&nbsp;=&nbsp;norm(torch.rand(1,&nbsp;3,&nbsp;299,&nbsp;299)).cuda()</td><td class="diff_next"></td><td class="diff_header" id="to2_2">2</td><td nowrap="nowrap">opt_image&nbsp;=&nbsp;norm(torch.rand(1,&nbsp;3,&nbsp;299,&nbsp;299)).cuda()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_3">3</td><td nowrap="nowrap">opt_image.requires_grad_()</td><td class="diff_next"></td><td class="diff_header" id="to2_3">3</td><td nowrap="nowrap">opt_image.requires_grad_()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_4">4</td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_4">4</td><td nowrap="nowrap"></td></tr>
+            <tr><td class="diff_next"><a href="#difflib_chg_to2__1">n</a></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"><a href="#difflib_chg_to2__1">n</a></td><td class="diff_header" id="to2_5">5</td><td nowrap="nowrap"><span class="diff_add">before_blur&nbsp;=&nbsp;None</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_5">5</td><td nowrap="nowrap">import&nbsp;torch.optim&nbsp;as&nbsp;optim</td><td class="diff_next"></td><td class="diff_header" id="to2_6">6</td><td nowrap="nowrap">import&nbsp;torch.optim&nbsp;as&nbsp;optim</td></tr>
+            <tr><td class="diff_next"><a href="#difflib_chg_to2__2">n</a></td><td class="diff_header" id="from2_6">6</td><td nowrap="nowrap">optimizer&nbsp;=&nbsp;optim.SGD([opt_image],&nbsp;lr=0.01,&nbsp;momentum=0.9,&nbsp;weight_decay=1e-<span class="diff_chg">1</span>)</td><td class="diff_next"><a href="#difflib_chg_to2__2">n</a></td><td class="diff_header" id="to2_7">7</td><td nowrap="nowrap">optimizer&nbsp;=&nbsp;optim.SGD([opt_image],&nbsp;lr=0.01,&nbsp;momentum=0.9,&nbsp;weight_decay=1e-<span class="diff_chg">5</span>)</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_7">7</td><td nowrap="nowrap">optimizer.zero_grad()</td><td class="diff_next"></td><td class="diff_header" id="to2_8">8</td><td nowrap="nowrap">optimizer.zero_grad()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_8">8</td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_9">9</td><td nowrap="nowrap"></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_9">9</td><td nowrap="nowrap">for&nbsp;idx&nbsp;in&nbsp;range(10000):</td><td class="diff_next"></td><td class="diff_header" id="to2_10">10</td><td nowrap="nowrap">for&nbsp;idx&nbsp;in&nbsp;range(10000):</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_10">10</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;out&nbsp;=&nbsp;model(opt_image)</td><td class="diff_next"></td><td class="diff_header" id="to2_11">11</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;out&nbsp;=&nbsp;model(opt_image)</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_11">11</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;idx&nbsp;%&nbsp;500&nbsp;==&nbsp;0:</td><td class="diff_next"></td><td class="diff_header" id="to2_12">12</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;if&nbsp;idx&nbsp;%&nbsp;500&nbsp;==&nbsp;0:</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_12">12</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print(idx,&nbsp;out.item())</td><td class="diff_next"></td><td class="diff_header" id="to2_13">13</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;print(idx,&nbsp;out.item())</td></tr>
+            <tr><td class="diff_next" id="difflib_chg_to2__2"></td><td class="diff_header" id="from2_13">13</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;out.backward()</td><td class="diff_next"></td><td class="diff_header" id="to2_14">14</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;out.backward()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_14">14</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;optimizer.step()</td><td class="diff_next"></td><td class="diff_header" id="to2_15">15</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;optimizer.step()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_15">15</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;optimizer.zero_grad()</td><td class="diff_next"></td><td class="diff_header" id="to2_16">16</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;optimizer.zero_grad()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_16">16</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;with&nbsp;torch.no_grad():</td><td class="diff_next"></td><td class="diff_header" id="to2_17">17</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;with&nbsp;torch.no_grad():</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_17">17</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;torch.clamp_(opt_image,&nbsp;min=0.0,&nbsp;max=1.0)</td><td class="diff_next"></td><td class="diff_header" id="to2_18">18</td><td nowrap="nowrap">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;torch.clamp_(opt_image,&nbsp;min=0.0,&nbsp;max=1.0)</td></tr>
+            <tr><td class="diff_next"><a href="#difflib_chg_to2__top">t</a></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"><a href="#difflib_chg_to2__top">t</a></td><td class="diff_header" id="to2_19">19</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;before_blur&nbsp;=&nbsp;opt_image.cpu().detach().squeeze().permute(1,&nbsp;2,&nbsp;0).numpy()</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_20">20</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;opt_image&nbsp;=&nbsp;cv2.blur(before_blur,&nbsp;(3,&nbsp;3),&nbsp;cv2.BORDER_DEFAULT)</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_21">21</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;opt_image&nbsp;=&nbsp;torch.tensor(opt_image).permute(2,&nbsp;0&nbsp;,1).unsqueeze(0).cuda()</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_22">22</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;opt_image.requires_grad_()</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_23">23</td><td nowrap="nowrap"><span class="diff_add">&nbsp;</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_24">24</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;state_dict&nbsp;=&nbsp;optimizer.state_dict()</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_25">25</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;optimizer&nbsp;=&nbsp;optim.SGD([opt_image],&nbsp;lr=0.01,&nbsp;momentum=0.9,&nbsp;weight_decay=1e-5)</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_26">26</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;optimizer.load_state_dict(state_dict)</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_27">27</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;optimizer.zero_grad()</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header"></td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_28">28</td><td nowrap="nowrap"><span class="diff_add">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_18">18</td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_29">29</td><td nowrap="nowrap"></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_19">19</td><td nowrap="nowrap">print(opt_image.min(),&nbsp;opt_image.max())</td><td class="diff_next"></td><td class="diff_header" id="to2_30">30</td><td nowrap="nowrap">print(opt_image.min(),&nbsp;opt_image.max())</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_20">20</td><td nowrap="nowrap">cpu_image&nbsp;=&nbsp;opt_image.cpu().detach().numpy()</td><td class="diff_next"></td><td class="diff_header" id="to2_31">31</td><td nowrap="nowrap">cpu_image&nbsp;=&nbsp;opt_image.cpu().detach().numpy()</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_21">21</td><td nowrap="nowrap">cpu_image&nbsp;=&nbsp;(cpu_image&nbsp;-&nbsp;cpu_image.min())&nbsp;/&nbsp;(cpu_image.max()&nbsp;-&nbsp;cpu_image.min())</td><td class="diff_next"></td><td class="diff_header" id="to2_32">32</td><td nowrap="nowrap">cpu_image&nbsp;=&nbsp;(cpu_image&nbsp;-&nbsp;cpu_image.min())&nbsp;/&nbsp;(cpu_image.max()&nbsp;-&nbsp;cpu_image.min())</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_22">22</td><td nowrap="nowrap"></td><td class="diff_next"></td><td class="diff_header" id="to2_33">33</td><td nowrap="nowrap"></td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_23">23</td><td nowrap="nowrap">temp&nbsp;=&nbsp;(cpu_image.squeeze().transpose(1,&nbsp;2,&nbsp;0)&nbsp;*&nbsp;255).astype(np.uint8)</td><td class="diff_next"></td><td class="diff_header" id="to2_34">34</td><td nowrap="nowrap">temp&nbsp;=&nbsp;(cpu_image.squeeze().transpose(1,&nbsp;2,&nbsp;0)&nbsp;*&nbsp;255).astype(np.uint8)</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_24">24</td><td nowrap="nowrap">import&nbsp;matplotlib.pyplot&nbsp;as&nbsp;plt</td><td class="diff_next"></td><td class="diff_header" id="to2_35">35</td><td nowrap="nowrap">import&nbsp;matplotlib.pyplot&nbsp;as&nbsp;plt</td></tr>
+            <tr><td class="diff_next"></td><td class="diff_header" id="from2_25">25</td><td nowrap="nowrap">plt.imshow(temp)</td><td class="diff_next"></td><td class="diff_header" id="to2_36">36</td><td nowrap="nowrap">plt.imshow(temp)</td></tr>
+        </tbody>
+    </table>
+    <table class="diff" summary="Legends">
+        <tr> <th colspan="2"> Legends </th> </tr>
+        <tr> <td> <table border="" summary="Colors">
+                      <tr><th> Colors </th> </tr>
+                      <tr><td class="diff_add">&nbsp;Added&nbsp;</td></tr>
+                      <tr><td class="diff_chg">Changed</td> </tr>
+                      <tr><td class="diff_sub">Deleted</td> </tr>
+                  </table></td>
+             <td> <table border="" summary="Links">
+                      <tr><th colspan="2"> Links </th> </tr>
+                      <tr><td>(f)irst change</td> </tr>
+                      <tr><td>(n)ext change</td> </tr>
+                      <tr><td>(t)op</td> </tr>
+                  </table></td> </tr>
+    </table>
+</body>
+
+</html>
+
