@@ -349,3 +349,27 @@ class SwapModuleOp(Op):
 
     def clone(self):
         return SwapModuleOp(self._layer, self._module)
+
+
+class SetPDBBreakpointOp(Op):
+    """Set the breakpoint when pdb mode is enabled"""
+    def __init__(self, filename: str, lineno: int):
+        self._filename = filename
+        self._lineno = lineno
+
+    def __str__(self):
+        return f"Set breakpoint at {self._filename}:{self._lineno}"
+
+    def apply(self, runner: "ModelRunner"):
+        brp = (str(self._filename), int(self._lineno))
+        if brp in runner._breaks:
+            raise ValueError("The breakpoint is already set")
+        runner._breaks.add(brp)
+
+    def clear(self, runner: "ModelRunner"):
+        brp = (str(self._filename), int(self._lineno))
+        if brp in runner._breaks:
+            runner._breaks.remove(brp)
+
+    def clone(self):
+        return SetPDBBreakpointOp(self._filename, self._lineno)

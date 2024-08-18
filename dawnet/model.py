@@ -24,6 +24,7 @@ class ModelRunner:
         self._ctx = OrderedDict()
         self._input = OrderedDict()
         self._output = OrderedDict()
+        self._breaks = set()
 
         self._pdb = False
 
@@ -93,6 +94,10 @@ class ModelRunner:
         """
         pass
 
+    def set_breakpoint(self, filename: str, lineno: int):
+        """Set a breakpoint at a given file and line number"""
+        return self.add_ops(op.SetPDBBreakpointOp(filename, lineno))
+
     def set_outputs(self, *_layer_output_pairs) -> Handler:
         """Set the output of 1 or more layers"""
         ops = []
@@ -142,9 +147,10 @@ class ModelRunner:
 
     def __call__(self, *args, **kwargs):
         """Execute the model"""
-        if self._pdb:
+        if self._pdb or self._breaks:
             pdb = Pdb()
-            # pdb.set_break(filename=..., lineno=...)
+            for bp in self._breaks:
+                pdb.set_break(filename=bp[0], lineno=bp[1])
             return pdb.runcall(self._model, *args, **kwargs)
 
         return self._model(*args, **kwargs)
