@@ -2,7 +2,7 @@ import logging
 import uuid
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Any
 
 import torch
 import torch.nn as nn
@@ -23,19 +23,24 @@ class Op:
     layer output is an operation, changing the intermediate output is an operation...
     """
 
-    def apply(self, runner: "ModelRunner"):
+    def apply(self, runner: "ModelRunner") -> Any:
         """Apply the operation to the model runner"""
         raise NotImplemented("Need to implement `op.apply` method")
 
-    def clear(self, runner: "ModelRunner"):
+    def clear(self, runner: "ModelRunner") -> None:
         """Clear the operation from the model runner"""
         raise NotImplemented("Need to implement `op.clear` method")
 
-    def clone(self):
+    def clone(self) -> Any:
         raise NotImplemented("Need to implement `op.clone` method")
 
 class ForwardHookOp(Op):
-    """Attach forward hook"""
+    """Attach forward hook
+
+    Arg:
+        hook: a function with the following signature:
+            hook(runner, name, layer_obj, args, kwargs, output) -> output
+    """
 
     def __init__(self, hook: Callable, layer: str):
         self._hook = hook
@@ -45,7 +50,7 @@ class ForwardHookOp(Op):
     def __str__(self):
         return f"Add forward hook to layer {self._layer}: {self._hook.__doc__}"
 
-    def apply(self, runner: "ModelRunner"):
+    def apply(self, runner):
         if self._pt_hook is not None:
             raise ValueError(
                 "This operation is already applied. Run `.clone` to create new op"
@@ -56,7 +61,7 @@ class ForwardHookOp(Op):
             partial(self._hook, runner, self._layer), with_kwargs=True
         )
 
-    def clear(self, runner: "ModelRunner"):
+    def clear(self, runner):
         if self._pt_hook is not None:
             self._pt_hook.remove()
 
@@ -80,7 +85,7 @@ class ForwardPreHookOp(Op):
     def __str__(self):
         return f"Add forward pre-hook to layer {self._layer}: {self._hook.__doc__}"
 
-    def apply(self, runner: "ModelRunner"):
+    def apply(self, runner):
         if self._pt_hook is not None:
             raise ValueError(
                 "This operation is already applied. Run `.clone` to create new op"
@@ -91,7 +96,7 @@ class ForwardPreHookOp(Op):
             partial(self._hook, runner, self._layer), with_kwargs=True
         )
 
-    def clear(self, runner: "ModelRunner"):
+    def clear(self, runner):
         if self._pt_hook is not None:
             self._pt_hook.remove()
 
@@ -108,7 +113,7 @@ class CacheOutputOp(Op):
     def __str__(self):
         return f"Cache output of layer {self._layer}"
 
-    def apply(self, runner: "ModelRunner"):
+    def apply(self, runner):
         def cache_output_hook(r, n, l, i, o):
             r._output[n] = o
             return o
@@ -118,7 +123,7 @@ class CacheOutputOp(Op):
             partial(cache_output_hook, runner, self._layer)
         )
 
-    def clear(self, runner: "ModelRunner"):
+    def clear(self, runner):
         if self._pt_hook is not None:
             self._pt_hook.remove()
 
