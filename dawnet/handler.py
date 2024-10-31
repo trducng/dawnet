@@ -2,6 +2,7 @@ import logging
 import weakref
 from typing import Any
 
+from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
