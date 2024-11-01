@@ -1,4 +1,4 @@
-from dawnet.inspector import Inspector
+from dawnet.inspector import Inspector, Handler
 
 from sample import GPT2
 
@@ -34,6 +34,17 @@ def test_copy_inspector():
     )
     assert id(inspector1._model.batch_norm.running_mean) == id(inspector2._model.batch_norm.running_mean)
 
+    handlers1 = inspector1.get_submodule("_model.attention.query")._forward_hooks
+    handlers2 = inspector2.get_submodule("_model.attention.query")._forward_hooks
+    assert len(handlers1) == 1
+    assert len(handlers2) == 1
+
+    handler1 = list(handlers1.values())[0]
+    handler2 = list(handlers2.values())[0]
+    assert isinstance(handler1, Handler)
+    assert isinstance(handler2, Handler)
+    assert id(handler1._inspector) == id(inspector1)
+    assert id(handler2._inspector) == id(inspector2)
 
 def test_disable_op():
     pass

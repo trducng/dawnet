@@ -40,40 +40,44 @@ class Handler:
             '["forward", "forward_pre", "backward", "backward_pre"]'
         )
 
+    def forward_pre(self, module, args, kwargs):
+        args, kwargs = args, kwargs
+        if self._name in self._inspector._ops:
+            for op in reversed(self._inspector._ops[self._name]):
+                if op.enabled:
+                    args, kwargs = op.forward_pre(
+                        self._inspector, self._name, module, args, kwargs
+                    )
+        return args, kwargs
+
     def forward(self, module, args, kwargs, output):
         output = output
         if self._name in self._inspector._ops:
             for op in self._inspector._ops[self._name]:
-                output = op.forward(
-                    self._inspector, self._name, module, args, kwargs, output
-                )
+                if op.enabled:
+                    output = op.forward(
+                        self._inspector, self._name, module, args, kwargs, output
+                    )
         return output
-
-    def forward_pre(self, module, args, kwargs):
-        args, kwargs = args, kwargs
-        if self._name in self._inspector._ops:
-            for op in self._inspector._ops[self._name]:
-                args, kwargs = op.forward_pre(
-                    self._inspector, self._name, module, args, kwargs
-                )
-        return args, kwargs
 
     def backward(self, module, grad_input, grad_output):
         grad_input = grad_input
         if self._name in self._inspector._ops:
             for op in self._inspector._ops[self._name]:
-                grad_input = op.backward(
-                    self._inspector, self._name, module, grad_input, grad_output
-                )
+                if op.enabled:
+                    grad_input = op.backward(
+                        self._inspector, self._name, module, grad_input, grad_output
+                    )
         return grad_input
 
     def backward_pre(self, module, grad_output):
         grad_output = grad_output
         if self._name in self._inspector._ops:
             for op in self._inspector._ops[self._name]:
-                grad_output = op.backward_pre(
-                    self._inspector, self._name, module, grad_output
-                )
+                if op.enabled:
+                    grad_output = op.backward_pre(
+                        self._inspector, self._name, module, grad_output
+                    )
         return grad_output
 
 
@@ -82,6 +86,7 @@ class Op:
 
     def __init__(self):
         self.id = str(uuid.uuid4())
+        self.enabled = True
 
     def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
         return output
@@ -98,12 +103,18 @@ class Op:
         return grad_output
 
 
+class CacheOutputOp(Op):
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        inspector.state[name] = output
+        return output
+
+
 class RunState(nn.Module):
     def clear(self):
         pass
 
 
-def copy_model(module: nn.Module):
+def copy_model(module: nn.Module) -> nn.Module:
     """Deep cop a model but shallow copy the parameters to not blow up the memory"""
     from copy import deepcopy, _deepcopy_dispatch, _deepcopy_atomic
     _deepcopy_dispatch[torch.Tensor] = _deepcopy_atomic
@@ -120,6 +131,8 @@ class Inspector(nn.Module):
     Attributes:
         _original_model: the supplied model
         _model: the shallow cloned original model will be used to inspect
+        _ops: mapping from module name to list of `op` objects
+        _id_to_op: mapping from op id str to `op` object
         _state: contain information that the op populates (e.g. this is where
         state: contains pulbic information that the op populates
     """
@@ -134,6 +147,8 @@ class Inspector(nn.Module):
         self._model = copy_model(model)
 
         self._ops: dict[str, list[Op]] = OrderedDict()
+        self._id_to_op_info: dict[str, tuple[Op, str]] = OrderedDict()
+
         self.state: RunState = state or RunState()
         self._state = {}
 
@@ -145,16 +160,31 @@ class Inspector(nn.Module):
                 Handler(name, "forward", self), with_kwargs=True, always_call=True
             )
 
-    def register(self, name: str, op: Op):
+    def add_op(self, name: str, op: Op):
         if name == "." or self._model.get_submodule(name):
             if name not in self._ops:
                 self._ops[name] = []
             self._ops[name].append(op)
+            self._id_to_op_info[op.id] = (op, name)
         else:
             raise ValueError(f"Module with name {name} doesn't exist")
 
-    def deregister(self, op_id: str, name: str | None = None):
-        pass
+    def remove_op(self, op_id: str):
+        if op_id not in self._id_to_op_info:
+            raise ValueError(f"Op with id {op_id} doesn't exist")
+        layer_name = self._id_to_op_info[op_id][1]
+        self._ops[layer_name] = [op for op in self._ops[layer_name] if op.id != op_id]
+        del self._id_to_op_info[op_id]
+
+    def enable_op(self, op_id: str):
+        if op_id not in self._id_to_op_info:
+            raise ValueError(f"Op with id {op_id} doesn't exist")
+        self._id_to_op_info[op_id][0].enabled = True
+
+    def disable_op(self, op_id: str):
+        if op_id not in self._id_to_op_info:
+            raise ValueError(f"Op with id {op_id} doesn't exist")
+        self._id_to_op_info[op_id][0].enabled = False
 
     def copy(self) -> "Inspector":
         """Create a copy of the inspector"""
@@ -179,7 +209,6 @@ class Inspector(nn.Module):
             "ctx": self._ctx,
             "input": self._input,
             "output": self._output,
-            "pdb": self._pdb,
         }
         return state
 
