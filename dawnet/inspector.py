@@ -1,7 +1,7 @@
 import logging
 import uuid
 from collections import OrderedDict
-from pdb import Pdb
+from typing import Callable
 
 import torch
 import torch.nn as nn
@@ -44,7 +44,7 @@ class Handler:
         args, kwargs = args, kwargs
         if self._name in self._inspector._module_to_op:
             for op in reversed(self._inspector._module_to_op[self._name]):
-                if op.enabled:
+                if self._inspector._ops[op.id][2]:
                     args, kwargs = op.forward_pre(
                         self._inspector, self._name, module, args, kwargs
                     )
@@ -54,7 +54,7 @@ class Handler:
         output = output
         if self._name in self._inspector._module_to_op:
             for op in self._inspector._module_to_op[self._name]:
-                if op.enabled:
+                if self._inspector._ops[op.id][2]:
                     output = op.forward(
                         self._inspector, self._name, module, args, kwargs, output
                     )
@@ -64,7 +64,7 @@ class Handler:
         grad_input = grad_input
         if self._name in self._inspector._module_to_op:
             for op in self._inspector._module_to_op[self._name]:
-                if op.enabled:
+                if self._inspector._ops[op.id][2]:
                     grad_input = op.backward(
                         self._inspector, self._name, module, grad_input, grad_output
                     )
@@ -74,7 +74,7 @@ class Handler:
         grad_output = grad_output
         if self._name in self._inspector._module_to_op:
             for op in self._inspector._module_to_op[self._name]:
-                if op.enabled:
+                if self._inspector._ops[op.id][2]:
                     grad_output = op.backward_pre(
                         self._inspector, self._name, module, grad_output
                     )
@@ -86,7 +86,6 @@ class Op:
 
     def __init__(self):
         self.id = str(uuid.uuid4())
-        self.enabled = True
 
     def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
         return output
@@ -102,10 +101,247 @@ class Op:
     def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
         return grad_output
 
+    def add(self, inspector: "Inspector"):
+        pass
 
-class CacheOutputOp(Op):
+    def remove(self, inspector: "Inspector"):
+        pass
+
+    def enable(self, inspector: "Inspector"):
+        pass
+
+    def disable(self, inspector: "Inspector"):
+        pass
+
+
+class CacheModuleInputOutput(Op):
+    """Cache the input and output of a module
+
+    Args:
+        no_input: if True, don't cache the input
+        no_output: if True, don't cache the output
+        input_getter: a callback to get the desired input, should take [args], {kwargs}
+        output_getter: a callback to get the output, should take `output` object
+    """
+
+    def __ini__(
+        self,
+        no_input: bool = False,
+        no_output: bool = False,
+        input_getter: Callable | None = None,
+        output_getter: Callable | None = None,
+    ):
+        super().__init__()
+        self._no_input = no_input
+        self._no_output = no_output
+        self._input_getter = input_getter
+        self._output_getter = output_getter
+
     def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
-        inspector.state.output[name] = output
+        if self._no_output:
+            return output
+
+        if self._output_getter is None:
+            inspector.state.output[name] = output
+        else:
+            inspector.state.output[name] = self._output_getter(output)
+
+        return output
+
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if self._no_input:
+            return args, kwargs
+
+        if self._input_getter is None:
+            inspector.state.input[name] = args, kwargs
+        else:
+            inspector.state.input[name] = self._input_getter(args, kwargs)
+
+        return args, kwargs
+
+
+class HookOp(Op):
+    """Convenient object to register hook to Pytorch nn.Module using dawnet framework"""
+
+    def __init__(
+        self,
+        forward: Callable | None = None,
+        forward_pre: Callable | None = None,
+        backward: Callable | None = None,
+        backward_pre: Callable | None = None,
+    ):
+        super().__init__()
+        self._forward = forward
+        self._forward_pre = forward_pre
+        self._backward = backward
+        self._backward_pre = backward_pre
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        if self._forward is not None:
+            return self._forward(inspector, name, module, args, kwargs, output)
+        return output
+
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if self._forward_pre is not None:
+            return self._forward_pre(inspector, name, module, args, kwargs)
+        return args, kwargs
+
+    def backward(
+        self, inspector: "Inspector", name: str, module, grad_input, grad_output
+    ):
+        if self._backward is not None:
+            return self._backward(inspector, name, module, grad_input, grad_output)
+        return grad_input
+
+    def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
+        if self._backward_pre is not None:
+            return self._backward_pre(inspector, name, module, grad_output)
+        return grad_output
+
+
+class SwapStateDict(Op):
+    """Swap the state dict of a module"""
+
+    def __init__(self, state_dict: dict, prefix: str | None = None):
+        super().__init__()
+        self._prefix = prefix
+        if prefix is not None:
+            self._state_dict = {
+                k[len(prefix) :]: v
+                for k, v in state_dict.items()
+                if k.startswith(prefix)
+            }
+        else:
+            self._state_dict = state_dict
+
+    def add(self, inspector: "Inspector"):
+        # TODO: check if the layer already has SwapStateDict op added
+        self.enable(inspector)
+
+    def enable(self, inspector: "Inspector"):
+        if self.id in inspector._private_op_state:
+            return
+
+        module_name = inspector._ops[self.id][1]
+        module = inspector._model.get_submodule(module_name)
+        if self.id not in inspector._private_op_state:
+            inspector._private_op_state[self.id] = module.state_dict()
+            module.load_state_dict(self._state_dict)
+
+    def disable(self, inspector: "Inspector"):
+        if self.id not in inspector._private_op_state:
+            return
+
+        module_name = inspector._ops[self.id][1]
+        module = inspector._model.get_submodule(module_name)
+        module.load_state_dict(inspector._private_op_state[self.id])
+        del inspector._private_op_state[self.id]
+
+
+class SwapModule(Op):
+    """Swap the module of a layer"""
+
+    def __init__(self, module: nn.Module):
+        super().__init__()
+        self._module = module
+
+    def add(self, inspector: "Inspector"):
+        # TODO: check if the module is already swapped
+        # TODO: inform about operations of the original child module will be ignored
+        name = inspector._ops[self.id][1]
+        self._module.register_forward_pre_hook(
+            Handler(name, "forward_pre", inspector), with_kwargs=True
+        )
+        self._module.register_forward_hook(
+            Handler(name, "forward", inspector), with_kwargs=True, always_call=True
+        )
+        self.enable(inspector)
+
+    def enable(self, inspector: "Inspector"):
+        if self.id in inspector._private_op_state:
+            return
+
+        full_module_name = inspector._ops[self.id][1]
+        if "." not in full_module_name:
+            parent = inspector._model
+            module_name = full_module_name
+        else:
+            module_parent, module_name = full_module_name.rsplit(".", 1)
+            parent = inspector._model.get_submodule(module_parent)
+
+        inspector._private_op_state[self.id] = parent._modules[module_name]
+        parent._module[module_name] = self._module
+
+    def disable(self, inspector: "Inspector"):
+        if self.id not in inspector._private_op_state:
+            return
+
+        full_module_name = inspector._ops[self.id][1]
+        if "." not in full_module_name:
+            parent = inspector._model
+            module_name = full_module_name
+        else:
+            module_parent, module_name = full_module_name.rsplit(".", 1)
+            parent = inspector._model.get_submodule(module_parent)
+
+        parent._module[module_name] = inspector._private_op_state[self.id]
+        del inspector._private_op_state[self.id]
+
+
+class SetOutput(Op):
+    def __init__(self, output):
+        super().__init__()
+        self._output = output
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        return self._output
+
+
+class SetBreakpoint(Op):
+    def __init__(self, filename: str, lineno: int, pdb_cls: type | None = None):
+        super().__init__()
+        self._filename = filename
+        self._lineno = lineno
+        self._pdb_cls = pdb_cls
+
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if "in_break" not in inspector._private_op_state:
+            # construct the pdb object
+            if self._pdb_cls is None:
+                from pdb import Pdb
+
+                pdb = Pdb()
+            else:
+                pdb = self._pdb_cls()
+
+            def pdb_wrapper(module):
+                def wrapped(*args, **kwargs):
+                    return pdb.runcall(module, *args, **kwargs)
+
+                return wrapped
+
+            full_module_name = inspector._ops[self.id][1]
+            module = inspector._model.get_submodule(full_module_name)
+            inspector._private_op_state[self.id] = module.forward
+            module.forward = pdb_wrapper(module.forward)
+
+            inspector._private_op_state["in_break"] = pdb
+            inspector._private_op_state["break_id"] = self.id
+        else:
+            pdb = inspector._private_op_state["in_break"]
+
+        pdb.set_break(filename=self._filename, lineno=self._lineno)
+
+        return args, kwargs
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        if inspector._private_op_state["break_id"] == self.id:
+            # we should be the one to clean up
+            module.forward = inspector._private_op_state[self.id]
+            del inspector._private_op_state["in_break"]
+            del inspector._private_op_state["break_id"]
+            del inspector._private_op_state[self.id]
+
         return output
 
 
@@ -141,7 +377,8 @@ class Inspector(nn.Module):
         _model: the shallow cloned original model will be used to inspect
         _module_to_op: mapping from module name to list of `op` objects
         _ops: contain ops information: op_id -> (op, module_name)
-        _state: contain information that the op populates (e.g. this is where
+        _private_op_state: private space for the op to store its progress and to
+            communicate between layers All `ops` can have access to this space.
         state: contains pulbic information that the op populates
     """
 
@@ -155,10 +392,10 @@ class Inspector(nn.Module):
         self._model = copy_model(model)
 
         self._module_to_op: dict[str, list[Op]] = OrderedDict()
-        self._ops: dict[str, tuple[Op, str]] = OrderedDict()
+        self._ops: dict[str, list] = OrderedDict()  # op, module name, enable
 
         self.state: RunState = state or RunState()
-        self._state = {}
+        self._private_op_state = {}
 
         for name, module in self._model.named_modules():
             module.register_forward_pre_hook(
@@ -178,7 +415,8 @@ class Inspector(nn.Module):
             if name not in self._module_to_op:
                 self._module_to_op[name] = []
             self._module_to_op[name].append(op)
-            self._ops[op.id] = (op, name)
+            self._ops[op.id] = [op, name, True]
+            op.add(self)
             return op.id
         else:
             raise ValueError(f"Module with name {name} doesn't exist")
@@ -207,19 +445,24 @@ class Inspector(nn.Module):
     def remove_op(self, op_id: str):
         if op_id not in self._ops:
             raise ValueError(f"Op with id {op_id} doesn't exist")
+        self._ops[op_id][0].remove(self)
         layer_name = self._ops[op_id][1]
-        self._module_to_op[layer_name] = [op for op in self._module_to_op[layer_name] if op.id != op_id]
+        self._module_to_op[layer_name] = [
+            op for op in self._module_to_op[layer_name] if op.id != op_id
+        ]
         del self._ops[op_id]
 
     def enable_op(self, op_id: str):
         if op_id not in self._ops:
             raise ValueError(f"Op with id {op_id} doesn't exist")
-        self._ops[op_id][0].enabled = True
+        self._ops[op_id][2] = True
+        self._ops[op_id][0].enable(self)
 
     def disable_op(self, op_id: str):
         if op_id not in self._ops:
             raise ValueError(f"Op with id {op_id} doesn't exist")
-        self._ops[op_id][0].enabled = False
+        self._ops[op_id][2] = False
+        self._ops[op_id][0].disable(self)
 
     def copy(self) -> "Inspector":
         """Create a copy of the inspector"""
