@@ -46,6 +46,7 @@ def test_copy_inspector():
     assert id(handler1._inspector) == id(inspector1)
     assert id(handler2._inspector) == id(inspector2)
 
+
 def test_disable_op():
     pass
 
