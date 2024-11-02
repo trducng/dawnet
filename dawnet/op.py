@@ -1,375 +1,248 @@
 import logging
-import uuid
-from functools import partial
-from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+import sys
+from typing import Callable
 
-import torch
 import torch.nn as nn
-from platformdirs import user_cache_dir
-from torch.utils.hooks import RemovableHandle
 
-if TYPE_CHECKING:
-    from .model import ModelRunner
+from .inspector import Inspector, Op, Handler
 
 
 logger = logging.getLogger(__name__)
 
 
-class Op:
-    """Define base methods for an operation.
-
-    An operation is what we apply to the model. For example, saving the intermediate
-    layer output is an operation, changing the intermediate output is an operation...
-    """
-
-    def apply(self, runner: "ModelRunner"):
-        """Apply the operation to the model runner"""
-        raise NotImplemented("Need to implement `op.apply` method")
-
-    def clear(self, runner: "ModelRunner"):
-        """Clear the operation from the model runner"""
-        raise NotImplemented("Need to implement `op.clear` method")
-
-    def clone(self):
-        raise NotImplemented("Need to implement `op.clone` method")
-
-class ForwardHookOp(Op):
-    """Attach forward hook"""
-
-    def __init__(self, hook: Callable, layer: str):
-        self._hook = hook
-        self._layer = layer.strip(".")
-        self._pt_hook: RemovableHandle | None = None
-
-    def __str__(self):
-        return f"Add forward hook to layer {self._layer}: {self._hook.__doc__}"
-
-    def apply(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            raise ValueError(
-                "This operation is already applied. Run `.clone` to create new op"
-            )
-
-        module = runner.module(self._layer)
-        self._pt_hook = module.register_forward_hook(
-            partial(self._hook, runner, self._layer), with_kwargs=True
-        )
-
-    def clear(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            self._pt_hook.remove()
-
-    def clone(self):
-        return ForwardHookOp(self._hook, self._layer)
-
-
-class ForwardPreHookOp(Op):
-    """Attach forward pre-hook to an nn.Module layer
+class CacheModuleInputOutput(Op):
+    """Cache the input and output of a module
 
     Args:
-        hook: a function with the following signature:
-            hook(runner, layer, layer_obj, input_args, input_kwargs) -> (args, kwargs)
-        layer: the layer name to add this hook
+        no_input: if True, don't cache the input
+        no_output: if True, don't cache the output
+        input_getter: a callback to get the desired input, should take [args], {kwargs}
+        output_getter: a callback to get the output, should take `output` object
     """
-    def __init__(self, hook: Callable, layer: str):
-        self._hook = hook
-        self._layer = layer.strip(".")
-        self._pt_hook: RemovableHandle | None = None
+
+    def __init__(
+        self,
+        no_input: bool = False,
+        no_output: bool = False,
+        input_getter: Callable | None = None,
+        output_getter: Callable | None = None,
+    ):
+        super().__init__()
+        self._no_input = no_input
+        self._no_output = no_output
+        self._input_getter = input_getter
+        self._output_getter = output_getter
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        if self._no_output:
+            return output
+
+        if self._output_getter is None:
+            inspector.state.output[name] = output
+        else:
+            inspector.state.output[name] = self._output_getter(output)
+
+        return output
+
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if self._no_input:
+            return args, kwargs
+
+        if self._input_getter is None:
+            inspector.state.input[name] = args, kwargs
+        else:
+            inspector.state.input[name] = self._input_getter(args, kwargs)
+
+        return args, kwargs
+
+
+class Hook(Op):
+    """Convenient object to register hook to Pytorch nn.Module using dawnet framework"""
+
+    def __init__(
+        self,
+        forward: Callable | None = None,
+        forward_pre: Callable | None = None,
+        backward: Callable | None = None,
+        backward_pre: Callable | None = None,
+    ):
+        super().__init__()
+        self._forward = forward
+        self._forward_pre = forward_pre
+        self._backward = backward
+        self._backward_pre = backward_pre
 
     def __str__(self):
-        return f"Add forward pre-hook to layer {self._layer}: {self._hook.__doc__}"
+        kwargs = {}
+        if self._forward is not None:
+            kwargs["forward"] = self._forward.__name__
+        if self._forward_pre is not None:
+            kwargs["forward_pre"] = self._forward_pre.__name__
+        if self._backward is not None:
+            kwargs["backward"] = self._backward.__name__
+        if self._backward_pre is not None:
+            kwargs["backward_pre"] = self._backward_pre.__name__
+        return f"Hook({','.join(k+'='+v for k, v in kwargs.items())})"
 
-    def apply(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            raise ValueError(
-                "This operation is already applied. Run `.clone` to create new op"
-            )
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        if self._forward is not None:
+            return self._forward(inspector, name, module, args, kwargs, output)
+        return output
 
-        module = runner.module(self._layer)
-        self._pt_hook = module.register_forward_pre_hook(
-            partial(self._hook, runner, self._layer), with_kwargs=True
-        )
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if self._forward_pre is not None:
+            return self._forward_pre(inspector, name, module, args, kwargs)
+        return args, kwargs
 
-    def clear(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            self._pt_hook.remove()
+    def backward(
+        self, inspector: "Inspector", name: str, module, grad_input, grad_output
+    ):
+        if self._backward is not None:
+            return self._backward(inspector, name, module, grad_input, grad_output)
+        return grad_input
 
-    def clone(self):
-        return ForwardPreHookOp(self._hook, self._layer)
-
-
-class CacheOutputOp(Op):
-    """Cache the output of a layer"""
-    def __init__(self, layer):
-        self._layer = layer.strip(".")
-        self._pt_hook: RemovableHandle | None = None
-
-    def __str__(self):
-        return f"Cache output of layer {self._layer}"
-
-    def apply(self, runner: "ModelRunner"):
-        def cache_output_hook(r, n, l, i, o):
-            r._output[n] = o
-            return o
-
-        module = runner.module(self._layer) 
-        self._pt_hook = module.register_forward_hook(
-            partial(cache_output_hook, runner, self._layer)
-        )
-
-    def clear(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            self._pt_hook.remove()
-
-        if self._layer in runner._output:
-            del runner._output[self._layer]
-
-    def clone(self):
-        return CacheOutputOp(self._layer)
+    def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
+        if self._backward_pre is not None:
+            return self._backward_pre(inspector, name, module, grad_output)
+        return grad_output
 
 
-class CacheInputOp(Op):
-    """Cache the input of a layer"""
+class SwapStateDict(Op):
+    """Swap the state dict of a module"""
 
-    def __init__(self, layer):
-        self._layer = layer.strip(".")
-        self._pt_hook: RemovableHandle | None = None
+    def __init__(self, state_dict: dict, prefix: str | None = None):
+        super().__init__()
+        self._prefix = prefix
+        if prefix is not None:
+            self._state_dict = {
+                k[len(prefix) :]: v
+                for k, v in state_dict.items()
+                if k.startswith(prefix)
+            }
+        else:
+            self._state_dict = state_dict
 
-    def __str__(self):
-        return f"Cache input of layer {self._layer}"
+    def add(self, inspector: "Inspector"):
+        # TODO: check if the layer already has SwapStateDict op added
+        self.enable(inspector)
 
-    def apply(self, runner: "ModelRunner"):
-        def cache_input_hook(r, n, l, ia, ik, o):
-            r._input[n] = {"args": ia, "kwargs": ik}
-            return o
-
-        module = runner.module(self._layer) 
-        self._pt_hook = module.register_forward_hook(
-            partial(cache_input_hook, runner, self._layer), with_kwargs=True
-        )
-
-    def clear(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            self._pt_hook.remove()
-
-        if self._layer in runner._input:
-            del runner._input[self._layer]
-
-    def clone(self):
-        return CacheInputOp(self._layer)
-
-
-class CacheLayerOp(Op):
-    """Cache the input and output of a layer"""
-
-    def __init__(self, layer):
-        self._layer = layer.strip(".")
-        self._pt_hook: RemovableHandle | None = None
-
-    def __str__(self):
-        return f"Cache input and output of layer {self._layer}"
-
-    def apply(self, runner: "ModelRunner"):
-        def cache_layer_hook(r, n, l, ia, ik, o):
-            r._input[n] = {"args": ia, "kwargs": ik}
-            r._output[n] = o
-            return o
-
-        module = runner.module(self._layer) 
-        self._pt_hook = module.register_forward_hook(
-            partial(cache_layer_hook, runner, self._layer), with_kwargs=True
-        )
-
-    def clear(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            self._pt_hook.remove()
-
-        if self._layer in runner._input:
-            del runner._input[self._layer]
-
-        if self._layer in runner._output:
-            del runner._output[self._layer]
-
-    def clone(self):
-        return CacheLayerOp(self._layer)
-
-
-class SetOutputOp(Op):
-    """Set the output of a layer to a fixed value"""
-    def __init__(self, layer, output):
-        self._layer = layer.strip(".")
-        self._output = output
-        self._pt_hook: RemovableHandle | None = None
-
-    def __str__(self):
-        return f"Apply fixed output to layer {self._layer}"
-
-    def apply(self, runner:" ModelRunner"):
-        def set_output_hook(r, n, l, i, o):
-            return o
-
-        module = runner.module(self._layer)
-        self._pt_hook = module.register_forward_hook(
-            partial(set_output_hook, runner, self._layer, o=self._output)
-        )
-
-    def clear(self, runner: "ModelRunner"):
-        if self._pt_hook is not None:
-            self._pt_hook.remove()
-
-
-class AddContextOp(Op):
-    """Add context to the runner"""
-    def __init__(self, key, value):
-        self._key = key
-        self._value = value
-
-        self._applied = False
-
-    def __str__(self):
-        return f"Add context '{self._key}' to the runner"
-
-    def apply(self, runner: "ModelRunner"):
-        if self._applied:
-            raise ValueError(
-                "This operation is already applied. Run `.clone` to create new op"
-            )
-        runner._ctx[self._key] = self._value
-        self._applied = True
-
-    def clear(self, runner: "ModelRunner"):
-        if self._key in runner._ctx:
-            del runner._ctx[self._key]
-
-    def clone(self):
-        return AddContextOp(self._key, self._value)
-
-
-class SwapStateDictOp(Op):
-    """Swap the state dict"""
-    def __init__(self, layer, **updated_dict):
-        self._layer = layer.strip(".")
-        self._updated_dict = updated_dict
-        self._backup_path: Path | None = None
-
-    def __str__(self):
-        return f"Change state dict {self._updated_dict.keys()} of layer {self._layer}"
-
-    def apply(self, runner: "ModelRunner"):
-        if self._backup_path is not None:
-            raise ValueError(
-                "This operation is already applied. Run `.clone` to create new op"
-            )
-
-        self._backup_path = Path(user_cache_dir(appname="dawnet", ensure_exists=True))
-        self._backup_path = self._backup_path / f"ssd_{uuid.uuid4()}"
-
-        module = runner.module(self._layer)
-        # @TODO: the state_dict here might not be original state_dict.
-        state_dict = module.state_dict()
-
-        torch.save(state_dict, self._backup_path)
-        state_dict.update(**self._updated_dict)
-        module.load_state_dict(state_dict)
-
-    def clear(self, runner: "ModelRunner"):
-        if not self._backup_path:
-            raise ValueError("This operation hasn't been applied")
-
-        if not self._backup_path.is_file():
-            logger.warning(f"State dict doesn't exist. Skip reverting")
+    def enable(self, inspector: "Inspector"):
+        if self.id in inspector._private_op_state:
             return
 
-        state_dict = torch.load(self._backup_path)
-        module = runner.module(self._layer)
-        module.load_state_dict(state_dict)
-        self._backup_path.unlink()
-        self._backup_path = None
+        module_name = inspector._ops[self.id][1]
+        module = inspector._model.get_submodule(module_name)
+        if self.id not in inspector._private_op_state:
+            inspector._private_op_state[self.id] = module.state_dict()
+            module.load_state_dict(self._state_dict)
 
-    def clone(self):
-        return SwapStateDictOp(self._layer, **self._updated_dict)
+    def disable(self, inspector: "Inspector"):
+        if self.id not in inspector._private_op_state:
+            return
+
+        module_name = inspector._ops[self.id][1]
+        module = inspector._model.get_submodule(module_name)
+        module.load_state_dict(inspector._private_op_state[self.id])
+        del inspector._private_op_state[self.id]
 
 
-class SwapModuleOp(Op):
-    """Swap an existing module with a new module
+class SwapModule(Op):
+    """Swap the module of a layer"""
 
-    Note: swapping a module will not transfer the hook of the old module to the
-    new module.
-
-    @TODO: check for missing hooks
-    """
-    def __init__(self, layer: str, module: nn.Module):
-        self._layer = layer.strip(".")
+    def __init__(self, module: nn.Module):
+        super().__init__()
         self._module = module
 
-        self._ori_module: nn.Module | None = None
+    def add(self, inspector: "Inspector"):
+        # TODO: check if the module is already swapped
+        # TODO: inform about operations of the original child module will be ignored
+        name = inspector._ops[self.id][1]
+        self._module.register_forward_pre_hook(
+            Handler(name, "forward_pre", inspector), with_kwargs=True
+        )
+        self._module.register_forward_hook(
+            Handler(name, "forward", inspector), with_kwargs=True, always_call=True
+        )
+        self.enable(inspector)
 
-    def __str__(self):
-        return f"Swap the module for layer {self._layer}"
-
-    def apply(self, runner: "ModelRunner"):
-        if self._ori_module is not None:
-            raise ValueError(
-                "This operation is already applied. Run `.clone` to create new op"
-            )
-        self._ori_module = runner.module(self._layer)
-        layers = self._layer.split(".")
-        if len(layers) > 1:
-            parent_layer = ".".join(layers[:-1])
-            child_name = layers[-1]
-            parent_module = runner.module(parent_layer)
-            if child_name.isnumeric():
-                parent_module[int(child_name)] = self._module
-            else:
-                setattr(parent_module, child_name, self._module)
-        elif len(layers) == 1:
-            self._model = self._module
-        else:
-            raise ValueError(f"Invalid layer {self._layer}")
-
-    def clear(self, runner: "ModelRunner"):
-        if self._ori_module is None:
-            logger.warning("Module hasn't been applied. Skip.")
+    def enable(self, inspector: "Inspector"):
+        if self.id in inspector._private_op_state:
             return
 
-        layers = self._layer.split(".")
-        if len(layers) > 1:
-            parent_layer = ".".join(layers[:-1])
-            child_name = layers[-1]
-            parent_module = runner.module(parent_layer)
-            if child_name.isnumeric():
-                parent_module[int(child_name)] = self._ori_module
-            else:
-                setattr(parent_module, child_name, self._ori_module)
-        elif len(layers) == 1:
-            runner._model = self._ori_module
+        full_module_name = inspector._ops[self.id][1]
+        if "." not in full_module_name:
+            parent = inspector._model
+            module_name = full_module_name
         else:
-            raise ValueError(f"Invalid layer {self._layer}")
+            module_parent, module_name = full_module_name.rsplit(".", 1)
+            parent = inspector._model.get_submodule(module_parent)
 
-    def clone(self):
-        return SwapModuleOp(self._layer, self._module)
+        inspector._private_op_state[self.id] = parent._modules[module_name]
+        parent._module[module_name] = self._module
+
+    def disable(self, inspector: "Inspector"):
+        if self.id not in inspector._private_op_state:
+            return
+
+        full_module_name = inspector._ops[self.id][1]
+        if "." not in full_module_name:
+            parent = inspector._model
+            module_name = full_module_name
+        else:
+            module_parent, module_name = full_module_name.rsplit(".", 1)
+            parent = inspector._model.get_submodule(module_parent)
+
+        parent._module[module_name] = inspector._private_op_state[self.id]
+        del inspector._private_op_state[self.id]
 
 
-class SetPDBBreakpointOp(Op):
-    """Set the breakpoint when pdb mode is enabled"""
-    def __init__(self, filename: str, lineno: int):
+class SetOutput(Op):
+    def __init__(self, output):
+        super().__init__()
+        self._output = output
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        return self._output
+
+
+class SetBreakpoint(Op):
+    def __init__(self, filename: str, lineno: int, pdb_cls: type | None = None):
+        super().__init__()
         self._filename = filename
         self._lineno = lineno
+        self._pdb_cls = pdb_cls
 
-    def __str__(self):
-        return f"Set breakpoint at {self._filename}:{self._lineno}"
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if "in_break" not in inspector._private_op_state:
+            # construct the pdb object
+            if self._pdb_cls is None:
+                from pdb import Pdb
 
-    def apply(self, runner: "ModelRunner"):
-        brp = (str(self._filename), int(self._lineno))
-        if brp in runner._breaks:
-            raise ValueError("The breakpoint is already set")
-        runner._breaks.add(brp)
+                pdb = Pdb()
+            else:
+                pdb = self._pdb_cls()
 
-    def clear(self, runner: "ModelRunner"):
-        brp = (str(self._filename), int(self._lineno))
-        if brp in runner._breaks:
-            runner._breaks.remove(brp)
+            pdb.botframe = None
+            pdb._set_stopinfo(sys._getframe(), None)
+            sys.settrace(pdb.trace_dispatch)
 
-    def clone(self):
-        return SetPDBBreakpointOp(self._filename, self._lineno)
+            inspector._private_op_state["in_break"] = pdb
+            inspector._private_op_state["break_id"] = self.id
+        else:
+            pdb = inspector._private_op_state["in_break"]
+
+        pdb.set_break(filename=self._filename, lineno=self._lineno)
+
+        return args, kwargs
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        pdb = inspector._private_op_state["in_break"]
+        pdb.clear_break(filename=self._filename, lineno=self._lineno)
+        if inspector._private_op_state["break_id"] == self.id:
+            # we should be the one to clean up
+            sys.settrace(None)
+
+            del inspector._private_op_state["in_break"]
+            del inspector._private_op_state["break_id"]
+
+        return output
