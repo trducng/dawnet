@@ -115,13 +115,43 @@ class Op:
 
 class RunState:
     def __init__(self):
-        self.output = {}
-        self.input = {}
+        self._new_state = False
+        self._sections = {}
+        self.create_section("input", {})
+        self.create_section("output", {})
 
     def clear(self):
-        pass
+        for name, default in self._sections.items():
+            setattr(self, name, default)
 
-    def __getitem__(self, item, default=None):
+    def has_section(self, name):
+        return name in self._sections
+
+    def create_section(self, name, default=None):
+        setattr(self, name, default)
+        self._sections[name] = default
+        
+    def delete_section(self, name):
+        if hasattr(self, name):
+            delattr(self, name)
+        self._sections.pop(name, None)
+
+    def __getattr__(self, item):
+        if item.startswith("_"):
+            return super().__getattr__(item)
+
+        if item in self._sections:
+            return self._sections[item]
+
+        return super().__getattr__(item)
+
+    def __delattr__(self, item):
+        if item in self._sections:
+            self.delete_section(item)
+        else:
+            super().__delattr__(item)
+
+    def __getitem__(self, item):
         return getattr(self, item)
 
 
@@ -179,7 +209,7 @@ class Inspector(nn.Module):
         Returns:
             the op id
         """
-        if name == "." or self._model.get_submodule(name):
+        if name == "" or self._model.get_submodule(name):
             if name not in self._module_to_op:
                 self._module_to_op[name] = []
             self._module_to_op[name].append(op)
@@ -298,3 +328,11 @@ class Inspector(nn.Module):
 
     def forward(self, *args, **kwargs):
         return self._model(*args, **kwargs)
+
+    def run(self, *args, _refresh_state: bool = True, **kwargs):
+        """Run the model"""
+        if _refresh_state:
+            self.state.clear()
+
+        output = self._model(*args, **kwargs)
+        return output, self.state
