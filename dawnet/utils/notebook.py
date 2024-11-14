@@ -6,7 +6,7 @@ import multiprocessing
 import subprocess
 
 
-def run_in_process(f, args):
+def run_in_process(f, *args, **kwargs):
     """Run the function inside other process.
 
     Useful not to block cell inside notebook.
@@ -25,7 +25,7 @@ def run_in_process(f, args):
     def wrapper():
         pid = os.getpid()
         print(f'Running process {pid}')
-        value = f(*args)
+        value = f(*args, **kwargs)
         return_dict['result'] = value
         print(f'Finished process {pid}')
 
@@ -46,10 +46,10 @@ def is_ready(return_dict):
 
 def gpu_info():
     """Get GPU information"""
-    subprocess.run(['ln', '-sf', '/opt/bin/nvidia-smi', '/usr/bin/nvidia-smi'])
-    subprocess.run(['pip', 'install', 'gputil'])
-    subprocess.run(['pip', 'install', 'psutil'])
-    subprocess.run(['pip', 'install', 'humanize'])
+    # subprocess.run(['ln', '-sf', '/opt/bin/nvidia-smi', '/usr/bin/nvidia-smi'])
+    # subprocess.run(['pip', 'install', 'gputil'])
+    # subprocess.run(['pip', 'install', 'psutil'])
+    # subprocess.run(['pip', 'install', 'humanize'])
 
     import psutil, humanize, os
     import GPUtil as GPU

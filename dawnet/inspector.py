@@ -201,7 +201,7 @@ class Inspector(nn.Module):
                 ops.update({op.id: op for op in self._module_to_op[name]})
 
         if ids is None and name is None:
-            ops.update({op_id: op for op_id, (op, _) in self._ops.items()})
+            ops.update({op_id: op for op_id, (op, _, _) in self._ops.items()})
 
         return ops
 
