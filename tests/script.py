@@ -1,4 +1,6 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel
+
 import torch
 
 
@@ -19,22 +21,27 @@ messages = [
     {"role": "user", "content": "Who are you?"},
 ]
 
-input_ids = tokenizer.apply_chat_template(
-    messages,
-    add_generation_prompt=True,
-    return_tensors="pt"
-).to(model.device)
+input_ids = tokenizer.encode("Who are you", return_tensors="pt").to(model.device)
+# input_ids = tokenizer.apply_chat_template(
+#     messages,
+#     add_generation_prompt=True,
+#     return_tensors="pt"
+# ).to(model.device)
 
 terminators = [
     tokenizer.eos_token_id,
     tokenizer.convert_tokens_to_ids("<|eot_id|>")
 ]
 
+# hbp1 = runner.set_breakpoint(
+#     "/home/john/transformers/src/transformers/models/gpt2/modeling_gpt2.py",
+#     625
+# )
+with torch.no_grad():
+    l = runner(input_ids)
+    print(type(l))
 
-# with torch.no_grad():
-#     l = model(input_ids)
-#     print(type(l))
-
+exit()
 
 def record(r, n, l, ia, ik, o):
     """

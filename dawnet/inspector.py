@@ -1,6 +1,7 @@
 import logging
 import uuid
 from collections import OrderedDict
+from copy import deepcopy
 
 import torch
 import torch.nn as nn
@@ -120,16 +121,25 @@ class RunState:
         self.create_section("input", {})
         self.create_section("output", {})
 
-    def clear(self):
+    def clear(self, names: list[str] | str | None=None):
+        """Clear the section, if not specified, clear all"""
+        if names is not None:
+            if not isinstance(names, list):
+                names = [names]
+            for name in names:
+                if name in self._sections:
+                    setattr(self, name, deepcopy(self._sections[name]))
+            return
+
         for name, default in self._sections.items():
-            setattr(self, name, default)
+            setattr(self, name, deepcopy(default))
 
     def has_section(self, name):
         return name in self._sections
 
     def create_section(self, name, default=None):
-        setattr(self, name, default)
         self._sections[name] = default
+        setattr(self, name, deepcopy(default))
         
     def delete_section(self, name):
         if hasattr(self, name):
