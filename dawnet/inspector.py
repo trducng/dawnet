@@ -113,6 +113,9 @@ class Op:
     def disable(self, inspector: "Inspector"):
         pass
 
+    def run_params(self, **kwargs) -> dict:
+        return {"id": self.id, **kwargs}
+
 
 class RunState:
     def __init__(self):
@@ -121,7 +124,7 @@ class RunState:
         self.create_section("input", {})
         self.create_section("output", {})
 
-    def clear(self, names: list[str] | str | None=None):
+    def clear(self, names: list[str] | str | None = None):
         """Clear the section, if not specified, clear all"""
         if names is not None:
             if not isinstance(names, list):
@@ -140,7 +143,7 @@ class RunState:
     def create_section(self, name, default=None):
         self._sections[name] = default
         setattr(self, name, deepcopy(default))
-        
+
     def delete_section(self, name):
         if hasattr(self, name):
             delattr(self, name)
@@ -204,6 +207,7 @@ class Inspector(nn.Module):
 
         self.state: RunState = state or RunState()
         self._private_op_state = {}
+        self._op_params: dict = {}
 
         for name, module in self._model.named_modules():
             module.register_forward_pre_hook(
@@ -332,17 +336,32 @@ class Inspector(nn.Module):
             obj = dill.load(fi)
         return obj
 
-    def get_handlers(self):
-        """Get handlers"""
-        return [Handler(hook_id, self) for hook_id in self._hooks.keys()]
-
     def forward(self, *args, **kwargs):
         return self._model(*args, **kwargs)
 
-    def run(self, *args, _refresh_state: bool = True, **kwargs):
+    def run(
+        self,
+        *args,
+        _refresh_state: bool = True,
+        _method: str | None = None,
+        _op_params: list[dict] | None = None,
+        **kwargs,
+    ):
         """Run the model"""
         if _refresh_state:
             self.state.clear()
+        self._op_params.clear()
+        if _op_params:
+            for op_param in _op_params:
+                if op_param["id"] in self._op_params:
+                    logger.warning(
+                        f"Op with id {op_param['id']} already exists, overwriting"
+                    )
+                self._op_params[op_param["id"]] = op_param
 
-        output = self._model(*args, **kwargs)
+        if _method:
+            output = getattr(self._model, _method)(*args, **kwargs)
+        else:
+            output = self._model(*args, **kwargs)
+
         return output, self.state
