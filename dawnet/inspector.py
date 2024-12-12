@@ -119,10 +119,10 @@ class Op:
 
 class RunState:
     def __init__(self):
-        self._new_state = False
-        self._sections = {}
-        self.create_section("input", {})
-        self.create_section("output", {})
+        self._defs = {}
+        self._states = {}
+        self.register("input", {})
+        self.register("output", {})
 
     def clear(self, names: list[str] | str | None = None):
         """Clear the section, if not specified, clear all"""
@@ -130,42 +130,47 @@ class RunState:
             if not isinstance(names, list):
                 names = [names]
             for name in names:
-                if name in self._sections:
-                    setattr(self, name, deepcopy(self._sections[name]))
+                if name in self._defs:
+                    self._states[name] = deepcopy(self._defs[name])
+                else:
+                    logger.warning(f"State with name {name} doesn't exist")
             return
 
-        for name, default in self._sections.items():
-            setattr(self, name, deepcopy(default))
+        for name, default in self._defs.items():
+            self._states[name] = deepcopy(default)
 
-    def has_section(self, name):
-        return name in self._sections
+    def __contains__(self, name):
+        return name in self._states
 
-    def create_section(self, name, default=None):
-        self._sections[name] = default
+    def register(self, name, default=None):
+        self._defs[name] = default
         setattr(self, name, deepcopy(default))
 
-    def delete_section(self, name):
+    def deregister(self, name):
         if hasattr(self, name):
             delattr(self, name)
-        self._sections.pop(name, None)
+        self._defs.pop(name, None)
 
-    def __getattr__(self, item):
-        if item.startswith("_"):
-            return super().__getattr__(item)
+    def keys(self):
+        return self._states.keys()
 
-        if item in self._sections:
-            return self._sections[item]
+    def values(self):
+        return self._states.values()
 
-        return super().__getattr__(item)
+    def items(self):
+        return self._states.items()
 
-    def __delattr__(self, item):
-        if item in self._sections:
-            self.delete_section(item)
-        else:
-            super().__delattr__(item)
+    def __getitem__(self, key):
+        if key not in self._defs:
+            raise KeyError(f"State with name {key} doesn't exist")
+        return self._states[key]
 
-    def __getitem__(self, item):
-        return getattr(self, item)
+    def __setitem__(self, key, value):
+        if key not in self._defs:
+            raise KeyError(
+                f"State with name {key} doesn't exist. Please .register first"
+            )
+        self._states[key] = value
 
 
 def copy_model(module: nn.Module) -> nn.Module:

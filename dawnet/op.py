@@ -38,9 +38,9 @@ class CacheModuleInputOutput(Op):
             return output
 
         if self._output_getter is None:
-            inspector.state.output[name] = output
+            inspector.state["output"][name] = output
         else:
-            inspector.state.output[name] = self._output_getter(output)
+            inspector.state["output"][name] = self._output_getter(output)
 
         return output
 
@@ -49,9 +49,9 @@ class CacheModuleInputOutput(Op):
             return args, kwargs
 
         if self._input_getter is None:
-            inspector.state.input[name] = args, kwargs
+            inspector.state["input"][name] = args, kwargs
         else:
-            inspector.state.input[name] = self._input_getter(args, kwargs)
+            inspector.state["input"][name] = self._input_getter(args, kwargs)
 
         return args, kwargs
 
