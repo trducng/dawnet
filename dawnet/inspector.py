@@ -101,6 +101,12 @@ class Op:
     def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
         return grad_output
 
+    def inspector_pre_run(self, inspector: "Inspector", method, args, kwargs):
+        ...
+
+    def inspector_post_run(self, inspector: "Inspector", output):
+        return output
+
     def add(self, inspector: "Inspector"):
         pass
 
@@ -204,8 +210,8 @@ class Inspector(nn.Module):
         state: None | RunState = None,
     ):
         super().__init__()
-        self._original_model = model
         self._model = copy_model(model)
+        self._original_model = model
 
         self._module_to_op: dict[str, list[Op]] = OrderedDict()
         self._ops: dict[str, list] = OrderedDict()  # op, module name, enable
@@ -284,6 +290,12 @@ class Inspector(nn.Module):
     def copy(self) -> "Inspector":
         """Create a copy of the inspector"""
         return Inspector(self._original_model)
+
+    def __str__(self):
+        return str(self._model)
+
+    def __repr__(self):
+        return repr(self._model)
 
     def __call__(self, *args, **kwargs):
         """Execute the model"""
@@ -364,9 +376,17 @@ class Inspector(nn.Module):
                     )
                 self._op_params[op_param["id"]] = op_param
 
+        for op in self._ops.values():
+            if op[2]:
+                op[0].inspector_pre_run(self, _method, args, kwargs)
+
         if _method:
             output = getattr(self._model, _method)(*args, **kwargs)
         else:
             output = self._model(*args, **kwargs)
+
+        for op in reversed(self._ops.values()):
+            if op[2]:
+                output = op[0].inspector_post_run(self, output)
 
         return output, self.state
