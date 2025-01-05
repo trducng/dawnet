@@ -83,6 +83,7 @@ class Handler:
 
 class Op:
     """Stateless operation"""
+    _supported_run_params = {}
 
     def __init__(self):
         self.id = str(uuid.uuid4())
@@ -120,6 +121,12 @@ class Op:
         pass
 
     def run_params(self, **kwargs) -> dict:
+        if self._supported_run_params:
+            if unknown := set(kwargs) - set(self._supported_run_params):
+                logger.warning(
+                    f"Unknown parameters {unknown} for op {self.__class__.__name__}. "
+                    f"Supported: {self._supported_run_params}"
+                )
         return {"id": self.id, **kwargs}
 
 

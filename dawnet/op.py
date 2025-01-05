@@ -196,13 +196,24 @@ class SwapModule(Op):
         del inspector._private_op_state[self.id]
 
 
-class SetOutput(Op):
-    def __init__(self, output):
-        super().__init__()
-        self._output = output
+class SetInputOutput(Op):
+    _supported_run_params = {"input", "output", "input_setter", "output_setter"}
 
     def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
-        return self._output
+        if self.id in inspector._op_params:
+            if "output" in inspector._op_params[self.id]:
+                return inspector._op_params[self.id]["output"]
+            if "output_setter" in inspector._op_params[self.id]:
+                return inspector._op_params[self.id]["output_setter"](output)
+        return output
+
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        if self.id in inspector._op_params:
+            if "input" in inspector._op_params[self.id]:
+                return inspector._op_params[self.id]["input"]
+            if "input_setter" in inspector._op_params[self.id]:
+                return inspector._op_params[self.id]["input_setter"](args, kwargs)
+        return args, kwargs
 
 
 class SetBreakpoint(Op):
