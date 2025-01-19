@@ -10,7 +10,24 @@ from .inspector import Inspector, Op, Handler
 logger = logging.getLogger(__name__)
 
 
-class CacheModuleInputOutput(Op):
+class NotSet:
+    def __bool__(self):
+        return False
+
+    def __eq__(self, other):
+        return isinstance(other, NotSet)
+
+    def __ne__(self, other):
+        return not isinstance(other, NotSet)
+
+    def __repr__(self):
+        return "notset"
+
+
+notset = NotSet()
+
+
+class GetInputOutput(Op):
     """Cache the input and output of a module
 
     Args:
@@ -54,6 +71,20 @@ class CacheModuleInputOutput(Op):
             inspector.state["input"][name] = self._input_getter(args, kwargs)
 
         return args, kwargs
+
+
+class GetOutput(GetInputOutput):
+    """Short-hand for GetInputOutput with only output cached"""
+
+    def __init__(self, output_getter: Callable | None = None):
+        super().__init__(no_input=True, output_getter=output_getter)
+
+
+class GetInput(GetInputOutput):
+    """Short-hand for GetInputOutput with only input cached"""
+
+    def __init__(self, input_getter: Callable | None = None):
+        super().__init__(no_output=True, input_getter=input_getter)
 
 
 class Hook(Op):
@@ -197,7 +228,6 @@ class SwapModule(Op):
 
 
 class SetInputOutput(Op):
-    _supported_run_params = {"input", "output", "input_setter", "output_setter"}
 
     def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
         if self.id in inspector._op_params:
@@ -214,6 +244,63 @@ class SetInputOutput(Op):
             if "input_setter" in inspector._op_params[self.id]:
                 return inspector._op_params[self.id]["input_setter"](args, kwargs)
         return args, kwargs
+
+    def run_params(
+        self,
+        input=notset,
+        output=notset,
+        input_setter: Callable | NotSet = notset,
+        output_setter: Callable | NotSet = notset,
+    ):
+        """Supply input, output
+
+        Args:
+            input: the input value to be set. Cannot be used with input_setter.
+            output: the output value to be set. Cannot be used with output_setter.
+            input_setter: a callback function to set the input, it will take
+                [args], {kwargs} and expect to return new [args], {kwargs}. Cannot
+                be used with input.
+            output_setter: a callback function to set the output, it will take
+                the output object and expect to return a new output object. Cannot
+                be used with output.
+        """
+        params = {}
+        if input != notset:
+            params["input"] = input
+        if output != notset:
+            params["output"] = output
+        if input_setter != notset:
+            params["input_setter"] = input_setter
+        if output_setter != notset:
+            params["output_setter"] = output_setter
+
+        if "input" in params and "input_setter" in params:
+            raise ValueError("Cannot set both input and input_setter")
+
+        if "output" in params and "output_setter" in params:
+            raise ValueError("Cannot set both output and output_setter")
+
+        return super().run_params(**params)
+
+
+class SetOutput(SetInputOutput):
+    """Short-hand for SetInputOutput with only output set"""
+
+    def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
+        return args, kwargs
+
+    def run_params(self, output=notset, output_setter=notset):  # type: ignore
+        return super().run_params(output=output, output_setter=output_setter)
+
+
+class SetInput(SetInputOutput):
+    """Short-hand for SetInputOutput with only input set"""
+
+    def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
+        return output
+
+    def run_params(self, input=notset, input_setter=notset):  # type: ignore
+        return super().run_params(input=input, input_setter=input_setter)
 
 
 class SetBreakpoint(Op):
