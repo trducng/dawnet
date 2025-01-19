@@ -79,12 +79,18 @@ class GetOutput(GetInputOutput):
     def __init__(self, output_getter: Callable | None = None):
         super().__init__(no_input=True, output_getter=output_getter)
 
+    def __str__(self):
+        return "GetOutput"
+
 
 class GetInput(GetInputOutput):
     """Short-hand for GetInputOutput with only input cached"""
 
     def __init__(self, input_getter: Callable | None = None):
         super().__init__(no_output=True, input_getter=input_getter)
+
+    def __str__(self):
+        return "GetInput"
 
 
 class Hook(Op):
@@ -161,7 +167,7 @@ class SwapStateDict(Op):
         if self.id in inspector._private_op_state:
             return
 
-        module_name = inspector._ops[self.id][1]
+        module_name = inspector._ops[self.id].layer
         module = inspector._model.get_submodule(module_name)
         if self.id not in inspector._private_op_state:
             inspector._private_op_state[self.id] = module.state_dict()
@@ -171,7 +177,7 @@ class SwapStateDict(Op):
         if self.id not in inspector._private_op_state:
             return
 
-        module_name = inspector._ops[self.id][1]
+        module_name = inspector._ops[self.id].layer
         module = inspector._model.get_submodule(module_name)
         module.load_state_dict(inspector._private_op_state[self.id])
         del inspector._private_op_state[self.id]
@@ -187,7 +193,7 @@ class SwapModule(Op):
     def add(self, inspector: "Inspector"):
         # TODO: check if the module is already swapped
         # TODO: inform about operations of the original child module will be ignored
-        name = inspector._ops[self.id][1]
+        name = inspector._ops[self.id].layer
         self._module.register_forward_pre_hook(
             Handler(name, "forward_pre", inspector), with_kwargs=True
         )
@@ -200,7 +206,7 @@ class SwapModule(Op):
         if self.id in inspector._private_op_state:
             return
 
-        full_module_name = inspector._ops[self.id][1]
+        full_module_name = inspector._ops[self.id].layer
         if "." not in full_module_name:
             parent = inspector._model
             module_name = full_module_name
@@ -215,7 +221,7 @@ class SwapModule(Op):
         if self.id not in inspector._private_op_state:
             return
 
-        full_module_name = inspector._ops[self.id][1]
+        full_module_name = inspector._ops[self.id].layer
         if "." not in full_module_name:
             parent = inspector._model
             module_name = full_module_name
@@ -292,6 +298,9 @@ class SetOutput(SetInputOutput):
     def run_params(self, output=notset, output_setter=notset):  # type: ignore
         return super().run_params(output=output, output_setter=output_setter)
 
+    def __str__(self):
+        return "SetOutput"
+
 
 class SetInput(SetInputOutput):
     """Short-hand for SetInputOutput with only input set"""
@@ -301,6 +310,9 @@ class SetInput(SetInputOutput):
 
     def run_params(self, input=notset, input_setter=notset):  # type: ignore
         return super().run_params(input=input, input_setter=input_setter)
+
+    def __str__(self):
+        return "SetInput"
 
 
 class SetBreakpoint(Op):

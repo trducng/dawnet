@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import logging
 import uuid
 from collections import OrderedDict
@@ -8,6 +9,12 @@ import torch.nn as nn
 
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class OpInfo:
+    op: "Op"
+    layer: str
+    enabled: bool
 
 
 class Handler:
@@ -44,7 +51,7 @@ class Handler:
         args, kwargs = args, kwargs
         if self._name in self._inspector._module_to_op:
             for op in self._inspector._module_to_op[self._name]:
-                if self._inspector._ops[op.id][2]:
+                if self._inspector._ops[op.id].enabled:
                     args, kwargs = op.forward_pre(
                         self._inspector, self._name, module, args, kwargs
                     )
@@ -54,7 +61,7 @@ class Handler:
         output = output
         if self._name in self._inspector._module_to_op:
             for op in reversed(self._inspector._module_to_op[self._name]):
-                if self._inspector._ops[op.id][2]:
+                if self._inspector._ops[op.id].enabled:
                     output = op.forward(
                         self._inspector, self._name, module, args, kwargs, output
                     )
@@ -64,7 +71,7 @@ class Handler:
         grad_output = grad_output
         if self._name in self._inspector._module_to_op:
             for op in self._inspector._module_to_op[self._name]:
-                if self._inspector._ops[op.id][2]:
+                if self._inspector._ops[op.id].enabled:
                     grad_output = op.backward_pre(
                         self._inspector, self._name, module, grad_output
                     )
@@ -74,7 +81,7 @@ class Handler:
         grad_input = grad_input
         if self._name in self._inspector._module_to_op:
             for op in self._inspector._module_to_op[self._name]:
-                if self._inspector._ops[op.id][2]:
+                if self._inspector._ops[op.id].enabled:
                     grad_input = op.backward(
                         self._inspector, self._name, module, grad_input, grad_output
                     )
@@ -213,7 +220,8 @@ class Inspector(nn.Module):
         self._original_model = model
 
         self._module_to_op: dict[str, list[Op]] = OrderedDict()
-        self._ops: dict[str, list] = OrderedDict()  # op, module name, enable
+        self._ops: dict[str, OpInfo] = OrderedDict()  # op, module name, enable
+        self.ops = []
 
         self.state: RunState = state or RunState()
         self._private_op_state = {}
@@ -227,7 +235,15 @@ class Inspector(nn.Module):
                 Handler(name, "forward", self), with_kwargs=True, always_call=True
             )
 
-    def add_op(self, name: str, op: Op) -> str:
+    @property
+    def model(self):
+        return self._model
+
+    @property
+    def original_model(self):
+        return self._original_model
+
+    def add(self, name: str, op: Op) -> Op:
         """Add op to the inspector
 
         Returns:
@@ -237,74 +253,56 @@ class Inspector(nn.Module):
             if name not in self._module_to_op:
                 self._module_to_op[name] = []
             self._module_to_op[name].append(op)
-            self._ops[op.id] = [op, name, True]
+            self._ops[op.id] = OpInfo(op=op, layer=name, enabled=True)
+            self.ops.append(op)
             op.add(self)
-            return op.id
+
+            return op
         else:
             raise ValueError(f"Module with name {name} doesn't exist")
 
-    def list_ops(self, ids: str | list[str] | None = None, name: str | None = None):
-        ops = {}
-        if ids is not None:
-            if isinstance(ids, str):
-                ids = [ids]
-            ops.update({op_id: self._ops[op_id][0] for op_id in ids})
-
-        if name is not None:
-            if name in self._module_to_op:
-                ops.update({op.id: op for op in self._module_to_op[name]})
-
-        if ids is None and name is None:
-            ops.update({op_id: op for op_id, (op, _, _) in self._ops.items()})
-
-        return ops
-
-    def get_op(self, id: str):
-        if id not in self._ops:
-            raise ValueError(f"Op with id {id} doesn't exist")
-        return self._ops[id][0]
-
-    def remove_op(self, op_id: str):
-        if op_id not in self._ops:
-            raise ValueError(f"Op with id {op_id} doesn't exist")
-        self._ops[op_id][0].remove(self)
-        layer_name = self._ops[op_id][1]
+    def remove(self, op: Op):
+        if op.id not in self._ops:
+            raise ValueError(f"Op with id {op.id} doesn't exist")
+        op.remove(self)
+        layer_name = self._ops[op.id].layer
         self._module_to_op[layer_name] = [
-            op for op in self._module_to_op[layer_name] if op.id != op_id
+            each for each in self._module_to_op[layer_name] if each.id != op.id
         ]
-        del self._ops[op_id]
+        del self._ops[op.id]
+        self.ops = [each for each in self.ops if each.id != op.id]
 
-    def enable_op(self, op_id: str):
-        if op_id not in self._ops:
-            raise ValueError(f"Op with id {op_id} doesn't exist")
-        self._ops[op_id][2] = True
-        self._ops[op_id][0].enable(self)
+    def enable(self, op: Op):
+        if op.id not in self._ops:
+            raise ValueError(f"Op with id {op.id} doesn't exist")
+        self._ops[op.id].enabled = True
+        op.enable(self)
 
-    def disable_op(self, op_id: str):
-        if op_id not in self._ops:
-            raise ValueError(f"Op with id {op_id} doesn't exist")
-        self._ops[op_id][2] = False
-        self._ops[op_id][0].disable(self)
+    def disable(self, op: Op):
+        if op.id not in self._ops:
+            raise ValueError(f"Op with id {op.id} doesn't exist")
+        self._ops[op.id].enabled = False
+        op.disable(self)
 
     def copy(self) -> "Inspector":
         """Create a copy of the inspector"""
         return Inspector(self._original_model)
 
     def __str__(self):
-        return str(self._model)
+        if not self._ops:
+            return "No ops added"
+
+        strs = ["Inspector ops:"]
+        for idx, op in enumerate(self.ops):
+            op_info = self._ops[op.id]
+            s = f"- [{idx}] {op} @ {op_info.layer}"
+            if not op_info.enabled:
+                s += " (disabled)"
+            strs.append(s)
+        return "\n".join(strs)
 
     def __repr__(self):
         return repr(self._model)
-
-    def __call__(self, *args, **kwargs):
-        """Execute the model"""
-        if self._pdb or self._breaks:
-            pdb = Pdb()
-            for bp in self._breaks:
-                pdb.set_break(filename=bp[0], lineno=bp[1])
-            return pdb.runcall(self._model, *args, **kwargs)
-
-        return self._model(*args, **kwargs)
 
     def __setattr__(self, name, value):
         if name in ["_model", "_original_model"]:
@@ -332,7 +330,6 @@ class Inspector(nn.Module):
         self._ctx = OrderedDict()
         self._input = OrderedDict()
         self._output = OrderedDict()
-        self._pdb = False
 
         for k, v in state["ops"].items():
             v.apply(self)
@@ -342,7 +339,6 @@ class Inspector(nn.Module):
         self._ctx = OrderedDict(state["ctx"])
         self._input = OrderedDict(state["input"])
         self._output = OrderedDict(state["output"])
-        self._pdb = state["pdb"]
 
     def save(self, location):
         import dill
@@ -381,17 +377,17 @@ class Inspector(nn.Module):
                     )
                 self._op_params[op_param["id"]] = op_param
 
-        for op in self._ops.values():
-            if op[2]:
-                op[0].inspector_pre_run(self, _method, args, kwargs)
+        for op_info in self._ops.values():
+            if op_info.enabled:
+                op_info.op.inspector_pre_run(self, _method, args, kwargs)
 
         if _method:
             output = getattr(self._model, _method)(*args, **kwargs)
         else:
             output = self._model(*args, **kwargs)
 
-        for op in reversed(self._ops.values()):
-            if op[2]:
-                output = op[0].inspector_post_run(self, output)
+        for op_info in reversed(self._ops.values()):
+            if op_info.enabled:
+                output = op_info.op.inspector_post_run(self, output)
 
         return output, self.state
