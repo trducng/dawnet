@@ -314,6 +314,12 @@ class Inspector(nn.Module):
 
         return self._model(*args, **kwargs)
 
+    def __setattr__(self, name, value):
+        if name in ["_model", "_original_model"]:
+            self.__dict__[name] = value
+            return
+        return super().__setattr__(name, value)
+
     def __getstate__(self):
         """Save the runner session"""
         state = {
