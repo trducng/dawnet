@@ -49,43 +49,63 @@ class Handler:
         )
 
     def forward_pre(self, module, args, kwargs):
+        if self._name not in self._inspector._module_to_op:
+            return args, kwargs
+
         args, kwargs = args, kwargs
-        if self._name in self._inspector._module_to_op:
-            for op in self._inspector._module_to_op[self._name]:
-                if self._inspector._ops[op.id].enabled:
-                    args, kwargs = op.forward_pre(
-                        self._inspector, self._name, module, args, kwargs
-                    )
+        for op in self._inspector._module_to_op[self._name]:
+            if self._inspector._ops[op.id].enabled:
+                if self._inspector._debug > 3:
+                    print(f"(v) {self._name}: {op} forward_pre")
+                args, kwargs = op.forward_pre(
+                    self._inspector, self._name, module, args, kwargs
+                )
+
         return args, kwargs
 
     def forward(self, module, args, kwargs, output):
+        if self._name not in self._inspector._module_to_op:
+            return output
+
         output = output
-        if self._name in self._inspector._module_to_op:
-            for op in reversed(self._inspector._module_to_op[self._name]):
-                if self._inspector._ops[op.id].enabled:
-                    output = op.forward(
-                        self._inspector, self._name, module, args, kwargs, output
-                    )
+        for op in reversed(self._inspector._module_to_op[self._name]):
+            if self._inspector._ops[op.id].enabled:
+                if self._inspector._debug > 3:
+                    print(f"(v) {self._name}: {op} forward")
+                output = op.forward(
+                    self._inspector, self._name, module, args, kwargs, output
+                )
+
         return output
 
     def backward_pre(self, module, grad_output):
+        if self._name not in self._inspector._module_to_op:
+            return grad_output
+
         grad_output = grad_output
-        if self._name in self._inspector._module_to_op:
-            for op in self._inspector._module_to_op[self._name]:
-                if self._inspector._ops[op.id].enabled:
-                    grad_output = op.backward_pre(
-                        self._inspector, self._name, module, grad_output
-                    )
+        for op in self._inspector._module_to_op[self._name]:
+            if self._inspector._ops[op.id].enabled:
+                if self._inspector._debug > 3:
+                    print(f"(v) {self._name}: {op} backward_pre")
+                grad_output = op.backward_pre(
+                    self._inspector, self._name, module, grad_output
+                )
+
         return grad_output
 
     def backward(self, module, grad_input, grad_output):
+        if self._name not in self._inspector._module_to_op:
+            return grad_input
+
         grad_input = grad_input
-        if self._name in self._inspector._module_to_op:
-            for op in self._inspector._module_to_op[self._name]:
-                if self._inspector._ops[op.id].enabled:
-                    grad_input = op.backward(
-                        self._inspector, self._name, module, grad_input, grad_output
-                    )
+        for op in self._inspector._module_to_op[self._name]:
+            if self._inspector._ops[op.id].enabled:
+                if self._inspector._debug > 3:
+                    print(f"(v) {self._name}: {op} backward")
+                grad_input = op.backward(
+                    self._inspector, self._name, module, grad_input, grad_output
+                )
+
         return grad_input
 
 
@@ -200,6 +220,11 @@ def copy_model(module: nn.Module) -> nn.Module:
 class Inspector(nn.Module):
     """Wrap around a model to help inspect its activity
 
+    Args:
+        model: the model to inspect
+        debug: the debug level: 0 - no debug, 1 - full error stacktrace, 2 - warning,
+            3 - info, 4 - debug
+
     Attributes:
         _original_model: the supplied model
         _model: the shallow cloned original model will be used to inspect
@@ -214,10 +239,12 @@ class Inspector(nn.Module):
         self,
         model: nn.Module,
         state: None | RunState = None,
+        debug: int=0,
     ):
         super().__init__()
         self._model = copy_model(model)
         self._original_model = model
+        self._debug = debug
 
         self._module_to_op: dict[str, list[Op]] = OrderedDict()
         self._ops: dict[str, OpInfo] = OrderedDict()  # op, module name, enable
