@@ -239,34 +239,34 @@ class SetInputOutput(Op):
         if self.id in inspector._op_params:
             if "output" in inspector._op_params[self.id]:
                 return inspector._op_params[self.id]["output"]
-            if "output_setter" in inspector._op_params[self.id]:
-                return inspector._op_params[self.id]["output_setter"](output)
+            if "output_fn" in inspector._op_params[self.id]:
+                return inspector._op_params[self.id]["output_fn"](output)
         return output
 
     def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
         if self.id in inspector._op_params:
             if "input" in inspector._op_params[self.id]:
                 return inspector._op_params[self.id]["input"]
-            if "input_setter" in inspector._op_params[self.id]:
-                return inspector._op_params[self.id]["input_setter"](args, kwargs)
+            if "input_fn" in inspector._op_params[self.id]:
+                return inspector._op_params[self.id]["input_fn"](args, kwargs)
         return args, kwargs
 
     def run_params(
         self,
         input=notset,
         output=notset,
-        input_setter: Callable | NotSet = notset,
-        output_setter: Callable | NotSet = notset,
+        input_fn: Callable | NotSet = notset,
+        output_fn: Callable | NotSet = notset,
     ):
         """Supply input, output
 
         Args:
-            input: the input value to be set. Cannot be used with input_setter.
-            output: the output value to be set. Cannot be used with output_setter.
-            input_setter: a callback function to set the input, it will take
+            input: the input value to be set. Cannot be used with input_fn.
+            output: the output value to be set. Cannot be used with output_fn.
+            input_fn: a callback function to set the input, it will take
                 [args], {kwargs} and expect to return new [args], {kwargs}. Cannot
                 be used with input.
-            output_setter: a callback function to set the output, it will take
+            output_fn: a callback function to set the output, it will take
                 the output object and expect to return a new output object. Cannot
                 be used with output.
         """
@@ -275,16 +275,16 @@ class SetInputOutput(Op):
             params["input"] = input
         if output != notset:
             params["output"] = output
-        if input_setter != notset:
-            params["input_setter"] = input_setter
-        if output_setter != notset:
-            params["output_setter"] = output_setter
+        if input_fn != notset:
+            params["input_fn"] = input_fn
+        if output_fn != notset:
+            params["output_fn"] = output_fn
 
-        if "input" in params and "input_setter" in params:
-            raise ValueError("Cannot set both input and input_setter")
+        if "input" in params and "input_fn" in params:
+            raise ValueError("Cannot set both input and input_fn")
 
-        if "output" in params and "output_setter" in params:
-            raise ValueError("Cannot set both output and output_setter")
+        if "output" in params and "output_fn" in params:
+            raise ValueError("Cannot set both output and output_fn")
 
         return super().run_params(**params)
 
@@ -295,8 +295,8 @@ class SetOutput(SetInputOutput):
     def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
         return args, kwargs
 
-    def run_params(self, output=notset, output_setter=notset):  # type: ignore
-        return super().run_params(output=output, output_setter=output_setter)
+    def run_params(self, output=notset, output_fn=notset):  # type: ignore
+        return super().run_params(output=output, output_fn=output_fn)
 
     def __str__(self):
         return "SetOutput"
@@ -308,8 +308,8 @@ class SetInput(SetInputOutput):
     def forward(self, inspector: "Inspector", name: str, module, args, kwargs, output):
         return output
 
-    def run_params(self, input=notset, input_setter=notset):  # type: ignore
-        return super().run_params(input=input, input_setter=input_setter)
+    def run_params(self, input=notset, input_fn=notset):  # type: ignore
+        return super().run_params(input=input, input_fn=input_fn)
 
     def __str__(self):
         return "SetInput"
