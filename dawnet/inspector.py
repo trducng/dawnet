@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 import logging
 import uuid
@@ -107,11 +108,11 @@ class Op:
     def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
         return grad_output
 
-    def inspector_pre_run(self, inspector: "Inspector", method, args, kwargs):
+    def inspector_pre_run(self, inspector: "Inspector"):
         ...
 
-    def inspector_post_run(self, inspector: "Inspector", output):
-        return output
+    def inspector_post_run(self, inspector: "Inspector"):
+        ...
 
     def add(self, inspector: "Inspector"):
         pass
@@ -156,11 +157,10 @@ class RunState:
 
     def register(self, name, default=None):
         self._defs[name] = default
-        setattr(self, name, deepcopy(default))
+        self._states[name] = deepcopy(default)
 
     def deregister(self, name):
-        if hasattr(self, name):
-            delattr(self, name)
+        self._states.pop(name, None)
         self._defs.pop(name, None)
 
     def keys(self):
@@ -357,6 +357,36 @@ class Inspector(nn.Module):
     def forward(self, *args, **kwargs):
         return self._model(*args, **kwargs)
 
+    def begin(self, op_params: list[dict] | None = None) -> RunState:
+        if op_params:
+            for op_param in op_params:
+                if op_param["id"] in self._op_params:
+                    logger.warning(
+                        f"Op with id {op_param['id']} already exists, overwriting"
+                    )
+                self._op_params[op_param["id"]] = op_param
+
+        for op_info in self._ops.values():
+            if op_info.enabled:
+                op_info.op.inspector_pre_run(self)
+
+        return self.state
+
+    def finish(self):
+        for op_info in reversed(self._ops.values()):
+            if op_info.enabled:
+                op_info.op.inspector_post_run(self)
+        self._op_params.clear()
+        self.state.clear()
+
+    @contextmanager
+    def ctx(self, op_params: list[dict] | None = None):
+        state = self.begin(op_params)
+        try:
+            yield state
+        finally:
+            self.finish()
+
     def run(
         self,
         *args,
@@ -379,7 +409,7 @@ class Inspector(nn.Module):
 
         for op_info in self._ops.values():
             if op_info.enabled:
-                op_info.op.inspector_pre_run(self, _method, args, kwargs)
+                op_info.op.inspector_pre_run(self)
 
         if _method:
             output = getattr(self._model, _method)(*args, **kwargs)
@@ -388,6 +418,6 @@ class Inspector(nn.Module):
 
         for op_info in reversed(self._ops.values()):
             if op_info.enabled:
-                output = op_info.op.inspector_post_run(self, output)
+                op_info.op.inspector_post_run(self)
 
         return output, self.state
