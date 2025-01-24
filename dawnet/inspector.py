@@ -1,9 +1,11 @@
-from contextlib import contextmanager
-from dataclasses import dataclass
+import re
 import logging
 import uuid
+from contextlib import contextmanager
+from dataclasses import dataclass
 from collections import OrderedDict
 from copy import deepcopy
+from typing import Callable
 
 import torch
 import torch.nn as nn
@@ -11,10 +13,11 @@ import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class OpInfo:
     op: "Op"
-    layer: str
+    layers: set[str]
     enabled: bool
 
 
@@ -111,6 +114,7 @@ class Handler:
 
 class Op:
     """Stateless operation"""
+
     def __init__(self):
         self.id = str(uuid.uuid4())
 
@@ -128,11 +132,9 @@ class Op:
     def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
         return grad_output
 
-    def inspector_pre_run(self, inspector: "Inspector"):
-        ...
+    def inspector_pre_run(self, inspector: "Inspector"): ...
 
-    def inspector_post_run(self, inspector: "Inspector"):
-        ...
+    def inspector_post_run(self, inspector: "Inspector"): ...
 
     def add(self, inspector: "Inspector"):
         pass
@@ -239,7 +241,7 @@ class Inspector(nn.Module):
         self,
         model: nn.Module,
         state: None | RunState = None,
-        debug: int=0,
+        debug: int = 0,
     ):
         super().__init__()
         self._model = copy_model(model)
@@ -270,32 +272,60 @@ class Inspector(nn.Module):
     def original_model(self):
         return self._original_model
 
-    def add(self, name: str, op: Op) -> Op:
+    def add(
+        self,
+        op: Op,
+        name: str | None = None,
+        name_filter: Callable | None = None,
+        name_regex: str | None = None,
+    ) -> Op:
         """Add op to the inspector
 
         Returns:
             the op id
         """
-        if name == "" or self._model.get_submodule(name):
-            if name not in self._module_to_op:
-                self._module_to_op[name] = []
-            self._module_to_op[name].append(op)
-            self._ops[op.id] = OpInfo(op=op, layer=name, enabled=True)
-            self.ops.append(op)
-            op.add(self)
+        layers: set[str] = set()
 
-            return op
-        else:
-            raise ValueError(f"Module with name {name} doesn't exist")
+        if name is not None:
+            if name == "" or self._model.get_submodule(name):
+                layers.add(name)
+            else:
+                raise ValueError(f"Module with name {name} doesn't exist")
+
+        if name_filter:
+            for name, _ in self._model.named_modules():
+                if name_filter(name):
+                    layers.add(name)
+
+        if name_regex:
+            regex_name = re.compile(name_regex)
+            for name, _ in self._model.named_modules():
+                if regex_name.match(name):
+                    layers.add(name)
+
+        if not layers:
+            raise ValueError("No layer found")
+
+        for layer in list(layers):
+            if layer not in self._module_to_op:
+                self._module_to_op[layer] = []
+            self._module_to_op[layer].append(op)
+
+        self._ops[op.id] = OpInfo(op=op, layers=layers, enabled=True)
+        self.ops.append(op)
+        op.add(self)
+
+        return op
 
     def remove(self, op: Op):
         if op.id not in self._ops:
             raise ValueError(f"Op with id {op.id} doesn't exist")
         op.remove(self)
-        layer_name = self._ops[op.id].layer
-        self._module_to_op[layer_name] = [
-            each for each in self._module_to_op[layer_name] if each.id != op.id
-        ]
+        layers = self._ops[op.id].layers
+        for layer in layers:
+            self._module_to_op[layer] = [
+                each for each in self._module_to_op[layer] if each.id != op.id
+            ]
         del self._ops[op.id]
         self.ops = [each for each in self.ops if each.id != op.id]
 
@@ -322,7 +352,12 @@ class Inspector(nn.Module):
         strs = ["Inspector ops:"]
         for idx, op in enumerate(self.ops):
             op_info = self._ops[op.id]
-            s = f"- [{idx}] {op} @ {op_info.layer}"
+            layers = [
+                name
+                for name, _ in self._model.named_modules()
+                if name in op_info.layers
+            ] # print the layers in the order that they are in the model
+            s = f"- [{idx}] {op} @ {layers}"
             if not op_info.enabled:
                 s += " (disabled)"
             strs.append(s)

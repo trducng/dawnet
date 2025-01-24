@@ -167,19 +167,23 @@ class SwapStateDict(Op):
         if self.id in inspector._private_op_state:
             return
 
-        module_name = inspector._ops[self.id].layer
-        module = inspector._model.get_submodule(module_name)
-        if self.id not in inspector._private_op_state:
-            inspector._private_op_state[self.id] = module.state_dict()
-            module.load_state_dict(self._state_dict)
+        old_state = {}
+        for layer in inspector._ops[self.id].layers:
+            module = inspector._model.get_submodule(layer)
+            if self.id not in inspector._private_op_state:
+                old_state[layer] = module.state_dict()
+                module.load_state_dict(self._state_dict)
+
+        inspector._private_op_state[self.id] = old_state
 
     def disable(self, inspector: "Inspector"):
         if self.id not in inspector._private_op_state:
             return
 
-        module_name = inspector._ops[self.id].layer
-        module = inspector._model.get_submodule(module_name)
-        module.load_state_dict(inspector._private_op_state[self.id])
+        for layer in inspector._ops[self.id].layers:
+            module = inspector._model.get_submodule(layer)
+            module.load_state_dict(inspector._private_op_state[self.id][layer])
+
         del inspector._private_op_state[self.id]
 
 
@@ -193,7 +197,11 @@ class SwapModule(Op):
     def add(self, inspector: "Inspector"):
         # TODO: check if the module is already swapped
         # TODO: inform about operations of the original child module will be ignored
-        name = inspector._ops[self.id].layer
+        layers = inspector._ops[self.id].layers
+        if len(layers) > 1:
+            raise ValueError("SwapModule can only swap one layer at a time")
+
+        name = list(layers)[0]
         self._module.register_forward_pre_hook(
             Handler(name, "forward_pre", inspector), with_kwargs=True
         )
@@ -206,7 +214,11 @@ class SwapModule(Op):
         if self.id in inspector._private_op_state:
             return
 
-        full_module_name = inspector._ops[self.id].layer
+        layers = inspector._ops[self.id].layers
+        if len(layers) > 1:
+            raise ValueError("SwapModule can only swap one layer at a time")
+
+        full_module_name = list(layers)[0]
         if "." not in full_module_name:
             parent = inspector._model
             module_name = full_module_name
@@ -221,7 +233,11 @@ class SwapModule(Op):
         if self.id not in inspector._private_op_state:
             return
 
-        full_module_name = inspector._ops[self.id].layer
+        layers = inspector._ops[self.id].layers
+        if len(layers) > 1:
+            raise ValueError("SwapModule can only swap one layer at a time")
+
+        full_module_name = list(layers)[0]
         if "." not in full_module_name:
             parent = inspector._model
             module_name = full_module_name
