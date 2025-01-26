@@ -93,6 +93,24 @@ class GetInput(GetInputOutput):
         return "GetInput"
 
 
+class GetGradient(Op):
+    """Get the gradient after backward pass"""
+
+    def backward(
+        self, inspector: "Inspector", name: str, module, grad_input, grad_output
+    ):
+        inspector.state["grad_output"][name] = grad_output
+        inspector.state["grad_input"][name] = grad_input
+        return grad_input
+
+    def add(self, inspector: "Inspector"):
+        inspector.state.register("grad_output", {})
+        inspector.state.register("grad_input", {})
+
+    def __str__(self):
+        return "GetGradient"
+
+
 class Hook(Op):
     """Convenient object to register hook to Pytorch nn.Module using dawnet framework"""
 

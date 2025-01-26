@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class OpInfo:
     op: "Op"
-    layers: set[str]
+    layers: list[str]
     enabled: bool
 
 
@@ -178,8 +178,9 @@ class RunState:
         return name in self._states
 
     def register(self, name, default=None):
-        self._defs[name] = default
-        self._states[name] = deepcopy(default)
+        if name not in self._defs:
+            self._defs[name] = default
+            self._states[name] = deepcopy(default)
 
     def deregister(self, name):
         self._states.pop(name, None)
@@ -263,6 +264,8 @@ class Inspector(nn.Module):
             module.register_forward_hook(
                 Handler(name, "forward", self), with_kwargs=True, always_call=True
             )
+            module.register_full_backward_pre_hook(Handler(name, "backward_pre", self))
+            module.register_full_backward_hook(Handler(name, "backward", self))
 
     @property
     def model(self):
@@ -284,6 +287,28 @@ class Inspector(nn.Module):
         Returns:
             the op id
         """
+        layers = self.get_layers(name, name_filter, name_regex)
+        if not layers:
+            raise ValueError("No layer found")
+
+        for layer in list(layers):
+            if layer not in self._module_to_op:
+                self._module_to_op[layer] = []
+            self._module_to_op[layer].append(op)
+
+        self._ops[op.id] = OpInfo(op=op, layers=layers, enabled=True)
+        self.ops.append(op)
+        op.add(self)
+
+        return op
+
+    def get_layers(
+        self,
+        name: str | None = None,
+        name_filter: Callable | None = None,
+        name_regex: str | None = None,
+    ) -> list[str]:
+        """Get the name of layers that match the filter"""
         layers: set[str] = set()
 
         if name is not None:
@@ -303,19 +328,13 @@ class Inspector(nn.Module):
                 if regex_name.match(name):
                     layers.add(name)
 
-        if not layers:
-            raise ValueError("No layer found")
+        layers_list = [
+            name
+            for name, _ in self._model.named_modules()
+            if name in layers
+        ]
 
-        for layer in list(layers):
-            if layer not in self._module_to_op:
-                self._module_to_op[layer] = []
-            self._module_to_op[layer].append(op)
-
-        self._ops[op.id] = OpInfo(op=op, layers=layers, enabled=True)
-        self.ops.append(op)
-        op.add(self)
-
-        return op
+        return layers_list
 
     def remove(self, op: Op):
         if op.id not in self._ops:
@@ -356,7 +375,7 @@ class Inspector(nn.Module):
                 name
                 for name, _ in self._model.named_modules()
                 if name in op_info.layers
-            ] # print the layers in the order that they are in the model
+            ]  # print the layers in the order that they are in the model
             s = f"- [{idx}] {op} @ {layers}"
             if not op_info.enabled:
                 s += " (disabled)"
