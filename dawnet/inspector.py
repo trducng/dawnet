@@ -278,7 +278,7 @@ class Inspector(nn.Module):
     def add(
         self,
         op: Op,
-        name: str | None = None,
+        name: str | list[str] | None = None,
         name_filter: Callable | None = None,
         name_regex: str | None = None,
     ) -> Op:
@@ -304,7 +304,7 @@ class Inspector(nn.Module):
 
     def get_layers(
         self,
-        name: str | None = None,
+        name: str | list[str] | None = None,
         name_filter: Callable | None = None,
         name_regex: str | None = None,
     ) -> list[str]:
@@ -312,10 +312,14 @@ class Inspector(nn.Module):
         layers: set[str] = set()
 
         if name is not None:
-            if name == "" or self._model.get_submodule(name):
-                layers.add(name)
-            else:
-                raise ValueError(f"Module with name {name} doesn't exist")
+            if isinstance(name, str):
+                name = [name]
+
+            for en in list(set(name)):
+                if en == "" or self._model.get_submodule(en):
+                    layers.add(en)
+                else:
+                    raise ValueError(f"Module with name {en} doesn't exist")
 
         if name_filter:
             for name, _ in self._model.named_modules():
