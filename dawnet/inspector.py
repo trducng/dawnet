@@ -197,15 +197,27 @@ class RunState:
 
     def __getitem__(self, key):
         if key not in self._defs:
-            raise KeyError(f"State with name {key} doesn't exist")
+            logger.info(f"State with name {key} doesn't exist")
         return self._states[key]
 
     def __setitem__(self, key, value):
         if key not in self._defs:
-            raise KeyError(
-                f"State with name {key} doesn't exist. Please .register first"
+            logger.info(
+                f"State with name {key} doesn't exist. Might .register first"
             )
         self._states[key] = value
+
+    def __str__(self):
+        return str(self._states)
+
+    def __repr__(self):
+        return repr(self._states)
+
+    def __len__(self):
+        return len(self._states)
+
+    def __iter__(self):
+        return iter(self._states)
 
 
 def copy_model(module: nn.Module) -> nn.Module:
