@@ -1,5 +1,6 @@
 import logging
 import sys
+from pathlib import Path
 from typing import Callable
 
 import torch.nn as nn
@@ -350,11 +351,18 @@ class SetInput(SetInputOutput):
 
 
 class SetBreakpoint(Op):
+    """The operation to set a breakpoint in the code
+
+    Unlike manually adding `import pdb; pdb.set_trace()` into the code file, by
+    using this operation, the breakpoint can be set dynamically and can be triggered
+    once the desired layer is reached.
+    """
     def __init__(self, filename: str, lineno: int, pdb_cls: type | None = None):
         super().__init__()
         self._filename = filename
         self._lineno = lineno
         self._pdb_cls = pdb_cls
+        self._prev_trace_fn = None
 
     def forward_pre(self, inspector: "Inspector", name: str, module, args, kwargs):
         if "in_break" not in inspector._private_op_state:
@@ -368,11 +376,20 @@ class SetBreakpoint(Op):
 
             pdb.botframe = None
             pdb._set_stopinfo(sys._getframe(), None)
-            sys.settrace(pdb.trace_dispatch)
+            pdb.forget()
+            self._prev_trace_fn = sys.gettrace()
+            if self._prev_trace_fn is not None:
+                def trace_dispatch(frame, event, arg):
+                    self._prev_trace_fn(frame, event, arg)
+                    return pdb.trace_dispatch(frame, event, arg)
+                sys.settrace(trace_dispatch)
+            else:
+                sys.settrace(pdb.trace_dispatch)
 
             inspector._private_op_state["in_break"] = pdb
             inspector._private_op_state["break_id"] = self.id
         else:
+            # There can be nested breakpoint calls
             pdb = inspector._private_op_state["in_break"]
 
         pdb.set_break(filename=self._filename, lineno=self._lineno)
@@ -384,9 +401,18 @@ class SetBreakpoint(Op):
         pdb.clear_break(filename=self._filename, lineno=self._lineno)
         if inspector._private_op_state["break_id"] == self.id:
             # we should be the one to clean up
-            sys.settrace(None)
+            sys.settrace(self._prev_trace_fn)
 
             del inspector._private_op_state["in_break"]
             del inspector._private_op_state["break_id"]
 
         return output
+
+    def __str__(self):
+        for path in sorted(sys.path, key=lambda x: len(x), reverse=True):
+            if self._filename.startswith(path):
+                filename = Path(self._filename).relative_to(path)
+                break
+        else:
+            filename = Path(self._filename).name
+        return f"SetBreakpoint({filename}:{self._lineno})"
