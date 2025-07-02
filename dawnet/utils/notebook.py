@@ -3,7 +3,6 @@
 # =============================================================================
 import os
 import multiprocessing
-import subprocess
 
 
 def run_in_process(f, *args, **kwargs):
@@ -64,3 +63,23 @@ def gpu_info():
           "Util {2:3.0f}% | "
           "Total {3:.0f}MB".format(
         gpu.memoryFree, gpu.memoryUsed, gpu.memoryUtil*100, gpu.memoryTotal))
+
+
+def is_notebook() -> bool:
+    """Check if the program is running inside a notebook
+
+    Credits: https://stackoverflow.com/questions/15411967/how-can-i-check-if-code-is-executed-in-the-ipython-notebook
+    """  # noqa: E501
+    try:
+        shell = get_ipython().__class__.__name__    # type: ignore
+        if shell == 'ZMQInteractiveShell':
+            return True   # Jupyter notebook or qtconsole
+        elif shell == 'TerminalInteractiveShell':
+            return False  # Terminal running IPython
+        else:
+            return False  # Other type (?)
+    except NameError:
+        return False      # Probably standard Python interpreter
+
+
+is_in_notebook: bool = is_notebook()
