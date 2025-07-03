@@ -1,0 +1,121 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as f
+import torch.optim as optim
+from torchvision import datasets, transforms
+
+
+class Model(nn.Module):
+
+  def __init__(self, memory):
+    super().__init__()
+    self.feature_extractor = nn.Conv2d(
+      in_channels=1, out_channels=64, kernel_size=2, stride=1, padding=1,
+    )
+    self.linear1 = nn.Linear(in_features=64, out_features=1)
+    self.linear2 = nn.Linear(in_features=841 + 512, out_features=512)
+    self.out = nn.Linear(in_features=512, out_features=10)
+
+    self.register_parameter(
+      "active_state", nn.Parameter(torch.empty(512).normal_(), requires_grad=True)
+    )
+    self.register_parameter(
+      "memory", nn.Parameter(torch.empty(512, memory).normal_(), requires_grad=True)
+    )
+    self.register_parameter(
+      "w", nn.Parameter(torch.empty(memory, 1).normal_(), requires_grad=True),
+    )
+    self.register_parameter(
+      "b", nn.Parameter(torch.empty(1).normal_(), requires_grad=True),
+    )
+
+  def forward(self, x):
+    bs = x.size(0)
+    nlm_state = self.memory.unsqueeze(0).expand(bs, -1, -1)
+    w = self.w.unsqueeze(0).expand(bs, -1, -1)
+
+    extracted_feature = self.feature_extractor(x)   # B,64,H,W
+    extracted_feature = extracted_feature.flatten(2).permute(0, 2, 1) # B,H*W,64
+    extracted_feature = f.relu(self.linear1(extracted_feature).squeeze(-1)) # B,H*W
+    active_state = self.active_state.unsqueeze(0).expand(bs, -1)  # B,M
+
+    for tick_idx in range(10):
+      post_act = torch.concat([extracted_feature, active_state], dim=1) # B,H*W+M
+      pre_act = f.relu(self.linear2(post_act).unsqueeze(-1)) # B,512,1
+      # print(f"== {tick_idx=}")
+      # print(f"{active_state.shape=}")
+      # print(f"{extracted_feature.shape=}")
+      # print(f"{post_act.shape=}")
+      # print(f"{pre_act.shape=}")
+      # print(f"{nlm_state.shape=}")
+      nlm_state = nlm_state[:,:,1:]
+      nlm_state = torch.concat([nlm_state, pre_act], dim=2)
+      active_state = torch.bmm(nlm_state, w).squeeze(-1)
+      active_state = active_state + self.b
+      # print()
+
+    return self.out(active_state)
+
+
+
+if __name__ == "__main__":
+  device = torch.device("mps")
+  transform = transforms.Compose([
+    transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+    transforms.RandomRotation(10),
+    transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,))
+  ])
+  train_data = datasets.MNIST(
+    root="/Users/john/dawnet/temp/data", train=True, download=True, transform=transform
+  )
+  test_data = datasets.MNIST(
+    root="/Users/john/dawnet/temp/data", train=False, download=True, transform=transform
+  )
+
+  images = []
+  for i in range(5):
+    image, _ = train_data[i]
+    images.append(image)
+
+  images = torch.stack(images)
+
+  print(f"{images.shape=}")
+  model = Model(memory=15,)
+  model.train()
+  init_mem = model.memory.clone().detach()
+  model = model.to(device=device)
+
+  loss_obj = nn.CrossEntropyLoss()
+  optimizer = optim.Adam(params=model.parameters())
+  trainloader = torch.utils.data.DataLoader(train_data, batch_size=256, shuffle=True, num_workers=1)
+  testloader = torch.utils.data.DataLoader(test_data, batch_size=256, shuffle=True, num_workers=1, drop_last=False)
+  count = 0
+  for x, y in trainloader:
+    x, y = x.to(device), y.to(device)
+    count += 1
+    out = model(x)
+    loss = loss_obj(out, y)
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    if count % 100 == 0:
+      print(f"{count=}, {loss.item()=}")
+
+  correct = 0
+  total = 0
+  model.eval()
+  with torch.no_grad():
+    for images, labels in testloader:
+      images, labels = images.to(device), labels.to(device)
+      outputs = model(images)
+      _, predicted = torch.max(outputs.data, 1)
+      total += labels.size(0)
+      correct += (predicted == labels).sum().item()
+
+  accuracy = 100 * correct / total
+  print(f"Accuracy: {accuracy:.2f}%")
+  post_mem = model.memory.clone().detach().cpu()
+  print((post_mem - init_mem).sum())
+
+# vim: ts=2 sts=2 sw=2 et
