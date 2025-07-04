@@ -64,6 +64,38 @@ class Model(nn.Module):
     return self.out(active_state)
 
 
+class Model2(Model):
+
+  def forward(self, x):
+    bs = x.size(0)
+    nlm_state = self.memory.unsqueeze(0).expand(bs, -1, -1)
+    w = self.w.unsqueeze(0).expand(bs, -1, -1)
+
+    extracted_feature = self.feature_extractor(x)  # B,64,H,W
+    extracted_feature = extracted_feature.flatten(2).permute(0, 2, 1)  # B,H*W,64
+    extracted_feature = f.relu(self.linear1(extracted_feature).squeeze(-1))  # B,H*W
+    active_state = self.active_state.unsqueeze(0).expand(bs, -1)  # B,M
+
+    outs = []
+    for tick_idx in range(self.nticks):
+      post_act = torch.concat([extracted_feature, active_state], dim=1)  # B,H*W+M
+      pre_act = f.relu(self.linear2(post_act).unsqueeze(-1))  # B,512,1
+      # print(f"== {tick_idx=}")
+      # print(f"{active_state.shape=}")
+      # print(f"{extracted_feature.shape=}")
+      # print(f"{post_act.shape=}")
+      # print(f"{pre_act.shape=}")
+      # print(f"{nlm_state.shape=}")
+      nlm_state = nlm_state[:, :, 1:]
+      nlm_state = torch.concat([nlm_state, pre_act], dim=2)
+      active_state = torch.bmm(nlm_state, w).squeeze(-1)
+      active_state = active_state + self.b
+      outs.append(self.out(active_state))
+      # print()
+
+    return outs
+
+
 if __name__ == "__main__":
   device = torch.device("mps")
   transform = transforms.Compose(
@@ -89,7 +121,7 @@ if __name__ == "__main__":
   images = torch.stack(images)
 
   print(f"{images.shape=}")
-  model = Model(memory=15, nticks=10)
+  model = Model2(memory=15, nticks=10)
   model.train()
   init_mem = model.memory.clone().detach()
   model = model.to(device=device)
@@ -107,7 +139,11 @@ if __name__ == "__main__":
     x, y = x.to(device), y.to(device)
     count += 1
     out = model(x)
-    loss = loss_obj(out, y)
+    for idx, each in enumerate(out):
+      if idx == 0:
+        loss = loss_obj(each, y)
+      else:
+        loss += loss_obj(each, y)
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
@@ -128,7 +164,7 @@ if __name__ == "__main__":
       if _i1 == 0:
         track = (images, labels)
       images, labels = images.to(device), labels.to(device)
-      outputs = model(images)
+      outputs = model(images)[-1]
       _, predicted = torch.max(outputs.data, 1)
       run1_inputs.append(images)
       run1_labels.append(labels)
@@ -150,7 +186,7 @@ if __name__ == "__main__":
 
   track2 = None
   run2_inputs, run2_labels, run2_outputs, run2_preds = [], [], [], []
-  for _ntick in range(20):
+  for _ntick in range(1, 20):
     correct, total = 0, 0
     model.nticks = _ntick
     with torch.no_grad():
@@ -158,7 +194,7 @@ if __name__ == "__main__":
         if _i1 == 0:
           track2 = (images, labels)
         images, labels = images.to(device), labels.to(device)
-        outputs = model(images)
+        outputs = model(images)[-1]
         _, predicted = torch.max(outputs.data, 1)
         run2_inputs.append(images)
         run2_labels.append(labels)
