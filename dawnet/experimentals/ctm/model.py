@@ -1,3 +1,4 @@
+import random
 from typing import Literal
 import torch
 import torch.nn as nn
@@ -95,7 +96,6 @@ class Model2(Model):
 
     return outs
 
-
 if __name__ == "__main__":
   device = torch.device("mps")
   transform = transforms.Compose(
@@ -139,11 +139,15 @@ if __name__ == "__main__":
     x, y = x.to(device), y.to(device)
     count += 1
     out = model(x)
-    for idx, each in enumerate(out):
-      if idx == 0:
-        loss = loss_obj(each, y)
-      else:
-        loss += loss_obj(each, y)
+
+    out_idx = random.randint(0, len(out)-1)
+    loss = loss_obj(out[out_idx], y)
+
+    # for idx, each in enumerate(out):
+    #   if idx == 0:
+    #     loss = loss_obj(each, y)
+    #   else:
+    #     loss += loss_obj(each, y)
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
@@ -164,7 +168,12 @@ if __name__ == "__main__":
       if _i1 == 0:
         track = (images, labels)
       images, labels = images.to(device), labels.to(device)
-      outputs = model(images)[-1]
+      out = model(images)
+
+      out_idx = random.randint(0, len(out)-1)
+      outputs = out[out_idx]
+
+      # outputs = model(images)[-1]
       _, predicted = torch.max(outputs.data, 1)
       run1_inputs.append(images)
       run1_labels.append(labels)
@@ -194,7 +203,12 @@ if __name__ == "__main__":
         if _i1 == 0:
           track2 = (images, labels)
         images, labels = images.to(device), labels.to(device)
-        outputs = model(images)[-1]
+        out = model(images)
+
+        out_idx = random.randint(0, len(out)-1)
+        outputs = out[out_idx]
+
+        # outputs = out[-1]
         _, predicted = torch.max(outputs.data, 1)
         run2_inputs.append(images)
         run2_labels.append(labels)
