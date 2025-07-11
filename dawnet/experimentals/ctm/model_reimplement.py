@@ -1,5 +1,9 @@
+from typing import Literal
+
+import einops
 import torch
 import torch.nn as nn
+from torchvision.models import resnet
 
 
 class Sync(nn.Module):
@@ -53,6 +57,42 @@ class FeatureEncoder(nn.Module):
     raise NotImplementedError()
 
 
+class ResnetFeatureEncoder(FeatureEncoder):
+  def __init__(self):
+    super().__init__()
+    def _forward_impl(self, x):
+      x = self.conv1(x)
+      x = self.bn1(x)
+      x = self.relu(x)
+      x = self.maxpool(x)
+      x = self.layer1(x)
+      return x
+
+    self._res = resnet.resnet18()
+    self._res._forward_impl = _forward_impl.__get__(self._res)
+
+  def forward(self, x):
+    return self._res(x)
+
+  def feat_shape(self):
+    return 64
+
+
+class NeuronLevelModel(nn.Module):
+  def __init__(self, size: int, memory: int):
+    super().__init__()
+    self._size = size
+    self._memory = memory
+
+    self._weights = nn.Parameter(torch.empty(size, memory).uniform_(), requires_grad=True)
+    self._bias = nn.Parameter(torch.empty(size), requires_grad=True)
+
+  def forward(self, x):
+    output = torch.einsum("bsm,sm->bs", x, self._weights)
+    output = output + self._bias
+    return output
+
+
 class CTM(nn.Module):
   """Reimplementation of the CTM module
 
@@ -88,7 +128,7 @@ class CTM(nn.Module):
 
   def get_feature_encoder(self) -> FeatureEncoder:
     """Encode the feature"""
-    ...
+    return ResnetFeatureEncoder()
 
   def get_synapse(self) -> nn.Module:
     """Get the synapse model"""
@@ -104,7 +144,7 @@ class CTM(nn.Module):
     Spits out:
       - the modified `feat` (same shape as feat)
     """
-    attn = VanillaAttention(feat_shape=self._feat_shape[-1])
+    attn = VanillaAttention(feat_shape=self._feat_shape)
     return attn
 
   def get_nlm(self) -> nn.Module:
@@ -115,7 +155,7 @@ class CTM(nn.Module):
     Spits out:
       - post_act: the post activation value (B,S)
     """
-    ...
+    return NeuronLevelModel(size=self._size, memory=self._memory)
 
   def get_synchronization(self) -> nn.Module:
     """Get the synchronization module

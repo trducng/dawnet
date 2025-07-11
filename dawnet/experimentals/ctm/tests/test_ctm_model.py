@@ -1,5 +1,7 @@
 import torch
-from dawnet.experimentals.ctm.model_reimplement import Sync, VanillaAttention
+from dawnet.experimentals.ctm.model_reimplement import (
+  NeuronLevelModel, ResnetFeatureEncoder, Sync, VanillaAttention
+)
 
 
 def test_shape_sync():
@@ -25,5 +27,23 @@ def test_shape_vanilla_attention():
   feat_ = torch.Tensor(size=(B, S, C)).uniform_()
   o_ = attn(rep_, feat_)
   assert o_.shape == (B, S, C)
+
+
+def test_shape_resnet_feature_encoder():
+  res = ResnetFeatureEncoder()
+
+  B, C, H, W = 8, 3, 128, 128
+  x = torch.empty((B, C, H, W)).uniform_()
+  y = res(x)
+  assert y.shape == (B, 64, 32, 32)
+
+
+def test_shape_nlm():
+  B, S, M = 8, 512, 15
+  model = NeuronLevelModel(size=S, memory=M)
+  x = torch.empty((B,S,M)).uniform_()
+  out = model(x)
+  assert out.shape == (B,S)
+
 
 # vim: ts=2 sts=2 sw=2 et
