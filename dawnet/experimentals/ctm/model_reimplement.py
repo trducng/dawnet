@@ -32,7 +32,7 @@ class Sync(nn.Module):
     left = post_act_hist[:,self._idx_left,:] * self._decay
     right = post_act_hist[:,self._idx_right,:] * self._decay
 
-    out = torch.bmm(left, right.permute(0, 2, 1))
+    out = torch.einsum("bct,bct->bc", left, right)
     return out
 
 
@@ -101,7 +101,7 @@ class CTM(nn.Module):
     memory: the maximum amount of pre-activation history kept (M)
     nticks: the loop amount
   """
-  def __init__(self, size, memory, nticks, nout, nfeat, **config):
+  def __init__(self, size, memory, nticks, nout, **config):
     super().__init__()
 
     self._config = config
@@ -115,7 +115,7 @@ class CTM(nn.Module):
     self._attn = self.get_attention()
     self._nlm = self.get_nlm()
     self._lin_out = nn.LazyLinear(out_features=nout)
-    self._lin_act = nn.LazyLinear(out_features=nfeat)
+    self._lin_act = nn.LazyLinear(out_features=1)
 
     self._i_post_act = nn.Parameter(torch.empty(size).normal_(), requires_grad=True)
     self._i_pre_act_mem = nn.Parameter(
@@ -170,7 +170,8 @@ class CTM(nn.Module):
 
   def forward(self, x):
     B = x.size(0)   # B,C,H,W
-    feat = self._feature_encoder(x)  # B,HxW,C
+    feat = self._feature_encoder(x)  # B,C,H,W
+    feat = feat.permute(0,2,3,1).contiguous().view(B,-1,feat.shape[1]) # B,HxW,C
 
     post_act = self._i_post_act.unsqueeze(0).expand(B, *self._i_post_act.shape)
     pre_act_mem = self._i_pre_act_mem.unsqueeze(0).expand(B, *self._i_pre_act_mem.shape)
@@ -178,22 +179,24 @@ class CTM(nn.Module):
       B, *self._i_post_act_mem.shape
     )
 
-    rep_action = None
+    rep = None
     post_act_mem = None
     outputs = []
     for t in range(self._nticks):
       # attend to the desired region from the input
-      if rep_action is not None:
-        modified_feat = self._attn(rep_action, feat)
-        syn_input = torch.concat([post_act, modified_feat])
+      if rep is not None:
+        modified_feat = self._attn(rep, feat)
       else:
-        syn_input = torch.concat([post_act, feat])
+        modified_feat = feat
+
+      modified_feat = self._lin_act(modified_feat).squeeze()
+      syn_input = torch.concat([post_act, modified_feat], dim=-1)
 
       # go through synapse model
-      pre_act = self._synapse(post_act)
+      pre_act = self._synapse(syn_input)
 
       # neuron level module
-      pre_act_mem = torch.concat([pre_act_mem[:,:,-1], pre_act], dim=-1)
+      pre_act_mem = torch.concat([pre_act_mem[:,:,:-1], pre_act.unsqueeze(-1)], dim=-1)
       post_act = self._nlm(pre_act_mem)   # B,S
       if not isinstance(post_act_mem, torch.Tensor):
         post_act_mem = post_act.unsqueeze(-1)
@@ -206,9 +209,6 @@ class CTM(nn.Module):
       # get output
       out = self._lin_out(rep)
       outputs.append(out)
-
-      # get action
-      rep_action = self._lin_act(rep)
 
     return outputs
 

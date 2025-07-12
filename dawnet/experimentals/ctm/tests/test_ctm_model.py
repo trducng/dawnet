@@ -1,6 +1,6 @@
 import torch
 from dawnet.experimentals.ctm.model_reimplement import (
-  NeuronLevelModel, ResnetFeatureEncoder, Sync, VanillaAttention
+  CTM, NeuronLevelModel, ResnetFeatureEncoder, Sync, VanillaAttention
 )
 
 
@@ -14,7 +14,7 @@ def test_shape_sync():
   sync = Sync(chosen=chosen, nneurons=nneurons, decay=decay) 
   i_ = torch.Tensor(size=(B, M, T)).uniform_()
   o_ = sync(i_)
-  assert o_.shape == (B, chosen, chosen)
+  assert o_.shape == (B, chosen)
 
 
 def test_shape_vanilla_attention():
@@ -45,5 +45,19 @@ def test_shape_nlm():
   out = model(x)
   assert out.shape == (B,S)
 
+
+def test_shape_ctm():
+  size = 512
+  memory = 15
+  nticks = 20
+  nout = 10
+  model = CTM(size=size, memory=memory, nticks=nticks, nout=nout)
+
+  B,C,H,W = 8,3,512,512
+  x = torch.empty((B,C,H,W)).uniform_()
+  out = model(x)
+  assert len(out) == nticks
+  for each in out:
+    assert each.shape == (B, nout)
 
 # vim: ts=2 sts=2 sw=2 et
