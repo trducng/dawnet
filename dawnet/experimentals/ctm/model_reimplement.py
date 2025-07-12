@@ -3,6 +3,7 @@ from typing import Literal
 import einops
 import torch
 import torch.nn as nn
+import torch.nn.functional as f
 from torchvision.models import resnet
 
 
@@ -46,8 +47,11 @@ class VanillaAttention(nn.Module):
 
     q = self._query(rep)
     q = q.unsqueeze(-1)    # B,C,1
+    # print(f"{q.mean()=}")
 
     qk = torch.bmm(feat, q)   # B,S,1
+    qk = f.softmax(qk, dim=1)
+    # print(f"{qk.mean()=}")
     v = feat * qk    # B,S,C
     return v
 
@@ -84,8 +88,8 @@ class NeuronLevelModel(nn.Module):
     self._size = size
     self._memory = memory
 
-    self._weights = nn.Parameter(torch.empty(size, memory).uniform_(), requires_grad=True)
-    self._bias = nn.Parameter(torch.empty(size), requires_grad=True)
+    self._weights = nn.Parameter(torch.empty(size, memory).normal_(), requires_grad=True)
+    self._bias = nn.Parameter(torch.empty(size).normal_(), requires_grad=True)
 
   def forward(self, x):
     output = torch.einsum("bsm,sm->bs", x, self._weights)
@@ -189,6 +193,7 @@ class CTM(nn.Module):
       else:
         modified_feat = feat
 
+      # print(f'{t=}, {modified_feat.mean()}')
       modified_feat = self._lin_act(modified_feat).squeeze()
       syn_input = torch.concat([post_act, modified_feat], dim=-1)
 
@@ -198,6 +203,7 @@ class CTM(nn.Module):
       # neuron level module
       pre_act_mem = torch.concat([pre_act_mem[:,:,:-1], pre_act.unsqueeze(-1)], dim=-1)
       post_act = self._nlm(pre_act_mem)   # B,S
+      # print(f"{post_act.mean()=}")
       if not isinstance(post_act_mem, torch.Tensor):
         post_act_mem = post_act.unsqueeze(-1)
       else:
@@ -211,6 +217,7 @@ class CTM(nn.Module):
       outputs.append(out)
 
     return outputs
+
 
 if __name__ == "__main__":
   import random
@@ -262,6 +269,9 @@ if __name__ == "__main__":
 
     out_idx = random.randint(0, len(out)-1)
     loss = loss_obj(out[out_idx], y)
+    # for idx in range(len(out)):
+    #   loss = loss_obj(out[idx], y)
+    #   print(f'{idx=}, {loss=}')
 
     # for idx, each in enumerate(out):
     #   if idx == 0:
@@ -271,7 +281,7 @@ if __name__ == "__main__":
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
-    if count % 100 == 0:
+    if count % 10 == 0:
       print(f"{count=}, {loss.item()=}")
 
   correct = 0
