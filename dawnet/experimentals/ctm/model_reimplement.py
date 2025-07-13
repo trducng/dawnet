@@ -94,6 +94,7 @@ class NeuronLevelModel(nn.Module):
   def forward(self, x):
     output = torch.einsum("bsm,sm->bs", x, self._weights)
     output = output + self._bias
+    output = f.relu(output)
     return output
 
 
@@ -121,7 +122,7 @@ class CTM(nn.Module):
     self._lin_out = nn.LazyLinear(out_features=nout)
     self._lin_act = nn.LazyLinear(out_features=1)
 
-    self._i_post_act = nn.Parameter(torch.empty(size).normal_(), requires_grad=True)
+    self._i_post_act = nn.Parameter(torch.empty(size).uniform_(), requires_grad=True)
     self._i_pre_act_mem = nn.Parameter(
       torch.empty(size, memory).normal_(), requires_grad=True
     )
@@ -137,7 +138,10 @@ class CTM(nn.Module):
   def get_synapse(self) -> nn.Module:
     """Get the synapse model"""
     # TODO: the default should be a U-Net architecture
-    return nn.LazyLinear(out_features=self._size)
+    return nn.Sequential(
+      nn.LazyLinear(out_features=self._size),
+      nn.ReLU(),
+    )
 
   def get_attention(self) -> nn.Module:
     """Get attention module, modulate where to look at in the data in each tick
@@ -201,7 +205,9 @@ class CTM(nn.Module):
       pre_act = self._synapse(syn_input)
 
       # neuron level module
-      pre_act_mem = torch.concat([pre_act_mem[:,:,:-1], pre_act.unsqueeze(-1)], dim=-1)
+      pre_act_mem = torch.concat([pre_act_mem[:,:,1:], pre_act.unsqueeze(-1)], dim=-1)
+      # print(pre_act_mem[0][0])
+      # import pdb; pdb.set_trace()
       post_act = self._nlm(pre_act_mem)   # B,S
       # print(f"{post_act.mean()=}")
       if not isinstance(post_act_mem, torch.Tensor):
@@ -247,7 +253,7 @@ if __name__ == "__main__":
   images = torch.stack(images)
 
   print(f"{images.shape=}")
-  model = CTM(size=512, memory=15, nticks=10, nout=10)
+  model = CTM(size=512, memory=5, nticks=10, nout=10)
   model.train()
   # init_mem = model.memory.clone().detach()
   model = model.to(device=device)
