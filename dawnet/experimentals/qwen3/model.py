@@ -519,7 +519,7 @@ def generate(model, idx, max_new_tokens, context_size, temperature=0.0, top_k=No
 if __name__ == "__main__":
   USE_REASONING_MODEL = False
   CHOOSE_MODEL = "0.6B"
-  QWEN3_CONFIG = get_config(CHOOSE_MODEL)
+  QWEN3_CONFIG = Qwen3Model.default_config(CHOOSE_MODEL)
 
   model = Qwen3Model(QWEN3_CONFIG)
   if torch.cuda.is_available():
@@ -537,8 +537,8 @@ if __name__ == "__main__":
   from huggingface_hub import hf_hub_download, snapshot_download
 
   weights_dict = load_file("/Users/john/Downloads/model.safetensors")
-  load_weights_into_qwen(model, QWEN3_CONFIG, weights_dict)
-  model.to(device);
+  model.load_weights(weights_dict)
+  model.to(device)
 
   tokenizer = Qwen3Tokenizer(
     tokenizer_file_path="/Users/john/Downloads/tokenizer.json",
