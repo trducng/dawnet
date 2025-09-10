@@ -37,6 +37,7 @@ class SAE(BaseModule):
     b_enc: float = 0.0
     b_dec: float = 0.0
     l1_coeff: float = 5
+    train_with_scaled_version: bool = False
 
   def __init__(self, cfg: "SAE.Config"):
     super().__init__()
@@ -67,8 +68,10 @@ class SAE(BaseModule):
     return x * self.scaler
 
   def forward(self, x):
+    x = self.preprocess_act(x)
     feat = self.encode(x)
     recon = self.decode(feat)
+    recon = self.postprocess_recon(recon)
 
     # update feat
     self.n_iter_since_last_active += 1
@@ -79,8 +82,6 @@ class SAE(BaseModule):
 
   def encode(self, x):
     # x: batch x act
-    x = self.preprocess_act(x)
-
     if self.cfg.subtract_decoder_bias:
       x = x - self.b_dec
     z = x @ self.W_enc + self.b_enc  # batch x feat
@@ -89,12 +90,20 @@ class SAE(BaseModule):
   def decode(self, feat):
     # feat: batch x feat
     z = feat @ self.W_dec + self.b_dec
-
-    z = self.postprocess_recon(z)
     return z
 
   def loss(self, x):
-    recon, feat = self(x)
+    if self.cfg.train_with_scaled_version:
+      x = self.preprocess_act(x)
+      feat = self.encode(x)
+      recon = self.decode(feat)
+
+      # update feat
+      self.n_iter_since_last_active += 1
+      fired_feat = (feat > 0).sum(dim=0)
+      self.n_iter_since_last_active[fired_feat > 0] = 0
+    else:
+      recon, feat = self(x)
     mse = ((recon - x) ** 2).sum(dim=1).mean()
 
     weighted_feat = feat * self.W_dec.norm(dim=1)
@@ -153,7 +162,10 @@ class Config:
 
 if __name__ == "__main__":
   cfg = Config(
-    sae=SAE.Config(d_act=2560, d_feat=2560*16, subtract_decoder_bias=True),
+    sae=SAE.Config(
+      d_act=2560, d_feat=2560*16, subtract_decoder_bias=True,
+      train_with_scaled_version=True
+    ),
     data=DataConfig(
       model="Qwen/Qwen3-4B-Base",
       layer="model.layers.33",
@@ -164,8 +176,8 @@ if __name__ == "__main__":
       tracker="wandb",
       tracker_config=LoggingConfig.WandbConfig(
         project="sae-qwen4b-layer33",
-        name="Track model trajectory",
-        notes="Train to check if everything works correctly",
+        name="Train using scaled input",
+        notes="We calculate based on the scaled input and output.",
       ),
       log_every_n_steps=20
     )
@@ -185,7 +197,7 @@ if __name__ == "__main__":
       local_tokenized_data="/Users/john/dawnet/experiments/temp/_temp_prepare_data",
     ),
   )
-  sae_name = "qwen4b-base.pkl"
+  sae_name = "qwen4b-base_scaled_input.pkl"
 
   logger = Logger.from_config(cfg.logging)
 
@@ -200,7 +212,7 @@ if __name__ == "__main__":
     "sae": sae.state_dict(),
     "opt": optimizer.state_dict()
   }
-  torch.save(state_dict, "before" + sae_name)
+  torch.save(state_dict, "before_" + sae_name)
 
   idx = 0
   start_time = time.time()
