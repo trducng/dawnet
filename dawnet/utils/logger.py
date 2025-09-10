@@ -1,6 +1,24 @@
 import logging
 import inspect
-from typing import Literal
+from dataclasses import dataclass, asdict
+from typing import Any, Literal
+
+
+
+@dataclass
+class LoggingConfig:
+
+    @dataclass
+    class WandbConfig:
+        project: str | None = None
+        id: str | None = None
+        name: str | None = None
+        notes: str | None = None
+        tags: list[str] | None = None
+
+    tracker: str | dict | None = None
+    tracker_config: "LoggingConfig.WandbConfig | None" = None
+    log_every_n_steps: int | None = None
 
 
 class Logger:
@@ -37,6 +55,11 @@ class Logger:
             formatter = logging.Formatter(" ".join(fmt))
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
+
+        self._step = 0
+        self._tracker = None
+        self._tracker_type = ""
+        self._log_every_n_steps = None
 
     def _get_caller_info(self):
         """Get the class name and method name of the caller"""
@@ -88,3 +111,41 @@ class Logger:
         formatted_msg = self._format_message(message)
         self.logger.critical(formatted_msg)
 
+    def track_config(self, **config):
+        if self._tracker_type == "wandb":
+            self._tracker.config.update(config)
+
+    def track_step(self, info):
+        if not self.in_tracking_step():
+            return
+
+        if "val/l0" in info:
+            print(self._step, info)
+        if self._tracker_type == "wandb":
+            self._tracker.log(info, step=self._step)
+
+    def step(self, n: int=1):
+        self._step += n
+
+    def in_tracking_step(self) -> bool:
+        if not self._log_every_n_steps:
+            return True
+        if self._step % self._log_every_n_steps == 0:
+            return True
+        return False
+
+    @classmethod
+    def from_config(cls, cfg: LoggingConfig):
+        logger = cls()
+        logger._tracker_type = cfg.tracker
+        logger._log_every_n_steps = cfg.log_every_n_steps
+        if cfg.tracker == "wandb":
+            import wandb
+            wandb.login()
+            tracker_config = {} if cfg.tracker_config is None else asdict(cfg.tracker_config)
+            logger._tracker = wandb.init(**tracker_config)
+        return logger
+
+    def close(self):
+        if self._tracker_type == "wandb":
+            self._tracker.finish()

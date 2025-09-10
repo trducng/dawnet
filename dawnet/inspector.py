@@ -226,9 +226,11 @@ def copy_model(module: nn.Module) -> nn.Module:
 
     _deepcopy_dispatch[torch.Tensor] = _deepcopy_atomic
     _deepcopy_dispatch[nn.Parameter] = _deepcopy_atomic
-    new_module = deepcopy(module)
-    del _deepcopy_dispatch[torch.Tensor]
-    del _deepcopy_dispatch[nn.Parameter]
+    try:
+        new_module = deepcopy(module)
+    finally:
+        del _deepcopy_dispatch[torch.Tensor]
+        del _deepcopy_dispatch[nn.Parameter]
     return new_module
 
 
@@ -237,12 +239,14 @@ class Inspector(nn.Module):
 
     Args:
         model: the model to inspect
+        state: the internal state of inspection
         debug: the debug level: 0 - no debug, 1 - full error stacktrace, 2 - warning,
             3 - info, 4 - debug
+        include_backward: whether to enable backward hooks
 
     Attributes:
-        _original_model: the supplied model
-        _model: the shallow cloned original model will be used to inspect
+        original_model: the supplied model
+        model: the shallow cloned original model will be used to inspect
         _module_to_op: mapping from module name to list of `op` objects
         _ops: contain ops information: op_id -> (op, module_name)
         _private_op_state: private space for the op to store its progress and to
@@ -255,11 +259,13 @@ class Inspector(nn.Module):
         model: nn.Module,
         state: None | RunState = None,
         debug: int = 0,
+        include_backward: bool = False,
     ):
         super().__init__()
         self._model = copy_model(model)
         self._original_model = model
         self._debug = debug
+        self._include_backward = include_backward
 
         self._module_to_op: dict[str, list[Op]] = OrderedDict()
         self._ops: dict[str, OpInfo] = OrderedDict()  # op, module name, enable
@@ -276,8 +282,9 @@ class Inspector(nn.Module):
             module.register_forward_hook(
                 Handler(name, "forward", self), with_kwargs=True, always_call=True
             )
-            module.register_full_backward_pre_hook(Handler(name, "backward_pre", self))
-            module.register_full_backward_hook(Handler(name, "backward", self))
+            if include_backward:
+                module.register_full_backward_pre_hook(Handler(name, "backward_pre", self))
+                module.register_full_backward_hook(Handler(name, "backward", self))
 
     @property
     def model(self):
@@ -296,8 +303,14 @@ class Inspector(nn.Module):
     ) -> Op:
         """Add op to the inspector
 
+        Args:
+            op: the operation to interfere
+            name: the name of layer that the op is hooked on
+            name_filter: a callable that filter the name of desired layer
+            name_regex: a regex pattern to get the layers with matched name
+
         Returns:
-            the op id
+            the op object
         """
         layers = self.get_layers(name, name_filter, name_regex)
         if not layers:
@@ -409,33 +422,26 @@ class Inspector(nn.Module):
 
     def __getstate__(self):
         """Save the runner session"""
-        state = {
-            "model": self._model,
-            "ops": {k: v.clone() for k, v in self._module_to_op.items()},
-            "hooks": self._hooks,
-            "ctx": self._ctx,
-            "input": self._input,
-            "output": self._output,
-        }
+        skips = ["_model"]
+        state = {}
+        for key, value in self.__dict__.items():
+            if key == skips:
+                continue
         return state
 
     def __setstate__(self, state: dict):
-        self._model = state["model"]
-        self._module_to_op: dict[str, list[Op]] = OrderedDict()
-
-        self._hooks = OrderedDict()
-        self._ctx = OrderedDict()
-        self._input = OrderedDict()
-        self._output = OrderedDict()
-
-        for k, v in state["ops"].items():
-            v.apply(self)
-            self._module_to_op[k] = v
-
-        self._hooks = OrderedDict(state["hooks"])
-        self._ctx = OrderedDict(state["ctx"])
-        self._input = OrderedDict(state["input"])
-        self._output = OrderedDict(state["output"])
+        self.__dict__.update(state)
+        self._model = copy_model(state["_original_model"])
+        for name, module in self._model.named_modules():
+            module.register_forward_pre_hook(
+                Handler(name, "forward_pre", self), with_kwargs=True
+            )
+            module.register_forward_hook(
+                Handler(name, "forward", self), with_kwargs=True, always_call=True
+            )
+            if state["_include_backward"]:
+                module.register_full_backward_pre_hook(Handler(name, "backward_pre", self))
+                module.register_full_backward_hook(Handler(name, "backward", self))
 
     def save(self, location):
         import dill
@@ -518,3 +524,26 @@ class Inspector(nn.Module):
                 op_info.op.inspector_post_run(self)
 
         return output, self.state
+
+
+class LLMInspector(Inspector):
+    """Inspector with utilities specialized for LLM"""
+    def __init__(
+        self,
+        model: nn.Module,
+        state: None | RunState = None,
+        debug: int = 0,
+        include_backward: bool = False,
+    ):
+        super().__init__(
+            model=model, state=state, debug=debug, include_backward=include_backward
+        )
+        self._tokenizer = getattr(model, "tokenizer", None)
+
+    @property
+    def tokenizer(self):
+        return self._tokenizer
+
+    @tokenizer.setter
+    def tokenizer(self, tokenizer):
+        self._tokenizer = tokenizer

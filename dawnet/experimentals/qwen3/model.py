@@ -515,8 +515,8 @@ def generate(model, idx, max_new_tokens, context_size, temperature=0.0, top_k=No
   return idx
 
 
-
 if __name__ == "__main__":
+  from dawnet.trace_path import equip_path_tracing
   USE_REASONING_MODEL = False
   CHOOSE_MODEL = "0.6B"
   QWEN3_CONFIG = Qwen3Model.default_config(CHOOSE_MODEL)
@@ -539,6 +539,7 @@ if __name__ == "__main__":
   weights_dict = load_file("/Users/john/Downloads/model.safetensors")
   model.load_weights(weights_dict)
   model.to(device)
+  # equip_path_tracing(model)
 
   tokenizer = Qwen3Tokenizer(
     tokenizer_file_path="/Users/john/Downloads/tokenizer.json",
@@ -549,6 +550,8 @@ if __name__ == "__main__":
 
   prompt = "Give me a short introduction to large language models."
   input_token_ids = tokenizer.encode(prompt)
+  output = model(torch.tensor(input_token_ids, device=device).unsqueeze(0))
+  import ipdb; ipdb.set_trace()
 
   start = time.time()
   output_token_ids = generate(

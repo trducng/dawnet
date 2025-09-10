@@ -43,7 +43,7 @@ class GetInputOutput(Op):
         no_input: bool = False,
         no_output: bool = False,
         input_getter: Callable | None = None,
-        output_getter: Callable | None = None,
+        output_getter: Callable | int | str | None = None,
     ):
         super().__init__()
         self._no_input = no_input
@@ -57,6 +57,10 @@ class GetInputOutput(Op):
 
         if self._output_getter is None:
             inspector.state["output"][name] = output
+        elif isinstance(self._output_getter, int):
+            inspector.state["output"][name] = output[self._output_getter]
+        elif isinstance(self._output_getter, str):
+            inspector.state["output"][name] = getattr(output, self._output_getter)
         else:
             inspector.state["output"][name] = self._output_getter(output)
 
