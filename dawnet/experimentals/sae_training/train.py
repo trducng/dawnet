@@ -125,7 +125,9 @@ class SAE(BaseModule):
     # input, recon: batch x act
     # feat: batch x feat
     recon, feat = self(input)
-    l0 = (feat > 0).float().sum(-1).mean()
+    l0 = (feat > 0).float().sum(-1)
+    l0 = l0 / feat.shape[-1]
+    l0 = l0.mean()
     mse = ((recon - input) ** 2).sum(dim=1).mean()
     variance = ((input - input.mean(0, keepdim=True)) ** 2).sum(-1).mean()
     explained_variance = 1 - mse / variance
@@ -158,13 +160,14 @@ class Config:
   )
 
   epochs: int = 1
+  load_from_ckpt: str = ""
 
 
 if __name__ == "__main__":
   cfg = Config(
     sae=SAE.Config(
       d_act=2560, d_feat=2560*16, subtract_decoder_bias=True,
-      train_with_scaled_version=True
+      train_with_scaled_version=True, l1_coeff = 1,
     ),
     data=DataConfig(
       model="Qwen/Qwen3-4B-Base",
@@ -183,12 +186,17 @@ if __name__ == "__main__":
     )
   )
 
+  ckpt = None
+  if cfg.load_from_ckpt:
+    ckpt = torch.load(cfg.load_from_ckpt, weights_only=False)
+
+
   # get the data
   model_name = "Qwen/Qwen3-4B-Base"
   # tokenizer = AutoTokenizer.from_pretrained(model_name)
   model = AutoModelForCausalLM.from_pretrained(model_name, device_map="mps")
 
-  insp = Inspector(model)
+  # insp = Inspector(model)
   activation_loader = GetActivation(
     cfg=GetActivation.Config(
       insp_layer="model.layers.33",
@@ -197,24 +205,41 @@ if __name__ == "__main__":
       local_tokenized_data="/Users/john/dawnet/experiments/temp/_temp_prepare_data",
     ),
   )
-  sae_name = "qwen4b-base_scaled_input.pkl"
+  # load from checkpoint
+  if ckpt is not None:
+    activation_loader._s.idx = ckpt["idx"]
 
+  sae_name = "qwen4b-base_scaled_input_coeff1.pkl"
+
+  # load from checkpoint
+  if ckpt is not None:
+    cfg.logging.tracker_config.id = ckpt['tracker']
   logger = Logger.from_config(cfg.logging)
 
   # initialize the SAE (standard SAE)
   sae = SAE(cfg=cfg.sae)
   sae = sae.to("mps")
+  # load from checkpoint
+  if ckpt is not None:
+    sae.load_state_dict(ckpt["sae"])
   sae.logger = logger
 
   optimizer = optim.Adam(sae.parameters(), lr=5e-4)
+  # load from checkpoint
+  if ckpt is not None:
+    optimizer.load_state_dict(ckpt["opt"])
 
-  state_dict = {
-    "sae": sae.state_dict(),
-    "opt": optimizer.state_dict()
-  }
-  torch.save(state_dict, "before_" + sae_name)
+  if ckpt is not None:
+    state_dict = {
+      "sae": sae.state_dict(),
+      "opt": optimizer.state_dict()
+    }
+    torch.save(state_dict, "before_" + sae_name)
 
-  idx = 0
+  idx = 0   
+  # load from checkpoint 
+  if ckpt is not None:
+    idx = ckpt["idx"]
   start_time = time.time()
   should_train = True
   while should_train:
