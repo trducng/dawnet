@@ -14,7 +14,7 @@ def visualize_attention_mask(
 ):
   """
     Visualize transformer attention mask with multiple approaches.
-    
+
     Args:
       attention_mask: Shape [batch_size, num_heads, seq_len, seq_len]
       method: 'heatmap', 'subplots', 'average', or 'interactive'

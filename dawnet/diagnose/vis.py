@@ -120,3 +120,28 @@ def draw_1d_plot(model, param1, param2, metric):
         [np array]: the plot
     """
     pass
+
+
+def draw_angle(radians):
+    fig, ax = plt.subplots(figsize=(4, 4))
+
+    # Draw the angle arc
+    theta = np.linspace(0, radians, 100)
+    r = 0.3
+    x = r * np.cos(theta)
+    y = r * np.sin(theta)
+    ax.plot(x, y, 'b-', linewidth=1)
+
+    # Draw the two rays (extend them further)
+    ax.plot([0, 1], [0, 0], 'k-', linewidth=1)  # Initial ray
+    ax.plot([0, np.cos(radians)], [0, np.sin(radians)], 'k-', linewidth=1)  # Final ray
+
+    # Dynamic limits based on the angle
+    margin = 0.2
+    ax.set_xlim(-1-margin, 1+margin)
+    ax.set_ylim(-1-margin, 1+margin)
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.3)
+    ax.set_title(f'Angle: {radians:.2f} radians ({np.degrees(radians):.1f}°)')
+
+    plt.show()

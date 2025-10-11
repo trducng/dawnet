@@ -11,6 +11,10 @@ from .inspector import Inspector, Op, Handler
 logger = logging.getLogger(__name__)
 
 
+class RegisterOpException(Exception):
+    ...
+
+
 class NotSet:
     def __bool__(self):
         return False
@@ -117,7 +121,18 @@ class GetGradient(Op):
 
 
 class Hook(Op):
-    """Convenient object to register hook to Pytorch nn.Module using dawnet framework"""
+    """Convenient object to register hook to Pytorch nn.Module using dawnet framework
+
+    Hook signature:
+        def forward(inspector, name, module, args, kwargs, output):
+            return output
+        def forward_pre(inspector, name, module, args, kwargs):
+            return args, kwargs
+        def backward(inspector, name, module, grad_input, grad_output):
+            return grad_input
+        def backward_pre(inspector, name, module, grad_input, grad_output):
+            return grad_output
+    """
 
     def __init__(
         self,
@@ -167,8 +182,8 @@ class Hook(Op):
         return grad_output
 
 
-class SwapStateDict(Op):
-    """Swap the state dict of a module"""
+class ReplaceStateDict(Op):
+    """Replace the state dict of a module with a new state dict"""
 
     def __init__(self, state_dict: dict, prefix: str | None = None):
         super().__init__()
@@ -183,7 +198,7 @@ class SwapStateDict(Op):
             self._state_dict = state_dict
 
     def add(self, inspector: "Inspector"):
-        # TODO: check if the layer already has SwapStateDict op added
+        # TODO: check if the layer already has ReplaceStateDict op added
         self.enable(inspector)
 
     def enable(self, inspector: "Inspector"):
@@ -210,8 +225,8 @@ class SwapStateDict(Op):
         del inspector._private_op_state[self.id]
 
 
-class SwapModule(Op):
-    """Swap the module of a layer"""
+class ReplaceModule(Op):
+    """Replace a model's module with a new module"""
 
     def __init__(self, module: nn.Module):
         super().__init__()
@@ -222,7 +237,7 @@ class SwapModule(Op):
         # TODO: inform about operations of the original child module will be ignored
         layers = inspector._ops[self.id].layers
         if len(layers) > 1:
-            raise ValueError("SwapModule can only swap one layer at a time")
+            raise RegisterOpException("ReplaceModule can only swap one layer at a time")
 
         name = list(layers)[0]
         self._module.register_forward_pre_hook(
@@ -239,7 +254,7 @@ class SwapModule(Op):
 
         layers = inspector._ops[self.id].layers
         if len(layers) > 1:
-            raise ValueError("SwapModule can only swap one layer at a time")
+            raise ValueError("ReplaceModule can only swap one layer at a time")
 
         full_module_name = list(layers)[0]
         if "." not in full_module_name:
@@ -258,7 +273,7 @@ class SwapModule(Op):
 
         layers = inspector._ops[self.id].layers
         if len(layers) > 1:
-            raise ValueError("SwapModule can only swap one layer at a time")
+            raise ValueError("ReplaceModule can only swap one layer at a time")
 
         full_module_name = list(layers)[0]
         if "." not in full_module_name:
@@ -270,6 +285,20 @@ class SwapModule(Op):
 
         parent._module[module_name] = inspector._private_op_state[self.id]
         del inspector._private_op_state[self.id]
+
+
+class DisableModule(Op):
+    """Turn the module off, essentially just treating the module as an identity
+    func
+    """
+    def add(self, inspector: "Inspector"):
+        self.enable(inspector)
+
+    def enable(self, inspector: "Inspector"):
+        ...
+
+    def disable(self, inspector: "Inspector"):
+        ...
 
 
 class SetInputOutput(Op):

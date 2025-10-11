@@ -132,9 +132,9 @@ class Op:
     def backward_pre(self, inspector: "Inspector", name: str, module, grad_output):
         return grad_output
 
-    def inspector_pre_run(self, inspector: "Inspector"): ...
+    def inspector_pre_run(self, insp: "Inspector", run_params: dict | None = None): ...
 
-    def inspector_post_run(self, inspector: "Inspector"): ...
+    def inspector_post_run(self, insp: "Inspector", run_params: dict | None = None): ...
 
     def add(self, inspector: "Inspector"):
         pass
@@ -173,6 +173,23 @@ class RunState:
 
         for name, default in self._defs.items():
             self._states[name] = deepcopy(default)
+
+    def clone(self, empty: bool = False):
+        """Clone the state to a new object
+
+        Args:
+            empty: if True, return an empty state with the same definition
+
+        Returns:
+            RunState: the cloned state
+        """
+        state = RunState()
+        state._defs = self._defs
+        if empty:
+            state.clear()
+        else:
+            state._states = deepcopy(self._states)
+        return state
 
     def __contains__(self, name):
         return name in self._states
@@ -320,12 +337,38 @@ class Inspector(nn.Module):
             if layer not in self._module_to_op:
                 self._module_to_op[layer] = []
             self._module_to_op[layer].append(op)
+        print(f"Added to layer {layers}")
 
         self._ops[op.id] = OpInfo(op=op, layers=layers, enabled=True)
         self.ops.append(op)
         op.add(self)
 
         return op
+
+    def move(
+        self,
+        op: Op,
+        name: str | list[str] | None = None,
+        name_filter: Callable | None = None,
+        name_regex: str | None = None,
+    ) -> Op:
+        """Move an operation from one layer to another layer
+
+        Args:
+            op: the operation to interfere
+            name: the name of layer that the op is hooked on
+            name_filter: a callable that filter the name of desired layer
+            name_regex: a regex pattern to get the layers with matched name
+
+        Returns:
+            the op object
+        """
+        self.remove(op)
+        return self.add(op, name, name_filter, name_regex)
+
+    def has_op(self, op: Op) -> bool:
+        """Check if the op is in the inspector"""
+        return op.id in self._ops
 
     def get_layers(
         self,
@@ -376,6 +419,10 @@ class Inspector(nn.Module):
             ]
         del self._ops[op.id]
         self.ops = [each for each in self.ops if each.id != op.id]
+
+    def remove_all(self):
+        for _ in range(len(self.ops)):
+            self.remove(self.ops[0])
 
     def enable(self, op: Op):
         if op.id not in self._ops:
@@ -471,24 +518,37 @@ class Inspector(nn.Module):
 
         for op_info in self._ops.values():
             if op_info.enabled:
-                op_info.op.inspector_pre_run(self)
+                run_params = (
+                    self._op_params[op_info.op.id]
+                    if op_info.op.id in self._op_params
+                    else None
+                )
+                op_info.op.inspector_pre_run(self, run_params)
 
         return self.state
 
-    def finish(self):
+    def finish(self, detach_state: bool = False):
         for op_info in reversed(self._ops.values()):
             if op_info.enabled:
-                op_info.op.inspector_post_run(self)
+                run_params = (
+                    self._op_params[op_info.op.id]
+                    if op_info.op.id in self._op_params
+                    else None
+                )
+                op_info.op.inspector_post_run(self, run_params)
         self._op_params.clear()
-        self.state.clear()
+        if detach_state:
+            self.state = self.state.clone(empty=True)
+        else:
+            self.state.clear()
 
     @contextmanager
-    def ctx(self, op_params: list[dict] | None = None):
+    def ctx(self, op_params: list[dict] | None = None, detach_state: bool = False):
         state = self.begin(op_params)
         try:
             yield state
         finally:
-            self.finish()
+            self.finish(detach_state=detach_state)
 
     def run(
         self,
@@ -512,7 +572,12 @@ class Inspector(nn.Module):
 
         for op_info in self._ops.values():
             if op_info.enabled:
-                op_info.op.inspector_pre_run(self)
+                run_params = (
+                    self._op_params[op_info.op.id]
+                    if op_info.op.id in self._op_params
+                    else None
+                )
+                op_info.op.inspector_pre_run(self, run_params)
 
         if _method:
             output = getattr(self._model, _method)(*args, **kwargs)
@@ -521,7 +586,12 @@ class Inspector(nn.Module):
 
         for op_info in reversed(self._ops.values()):
             if op_info.enabled:
-                op_info.op.inspector_post_run(self)
+                run_params = (
+                    self._op_params[op_info.op.id]
+                    if op_info.op.id in self._op_params
+                    else None
+                )
+                op_info.op.inspector_post_run(self, run_params)
 
         return output, self.state
 
@@ -547,3 +617,13 @@ class LLMInspector(Inspector):
     @tokenizer.setter
     def tokenizer(self, tokenizer):
         self._tokenizer = tokenizer
+
+    @classmethod
+    def from_hf(cls, name):
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+
+        model = AutoModelForCausalLM.from_pretrained(name, device_map="auto")
+        tokenizer = AutoTokenizer.from_pretrained(name)
+        insp = cls(model)
+        insp.tokenizer = tokenizer
+        return insp

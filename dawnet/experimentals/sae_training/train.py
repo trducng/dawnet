@@ -4,7 +4,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 from dawnet.datasets.acts import TokenizeDataset, GetActivation
 from dawnet.inspector import Inspector
@@ -163,11 +163,21 @@ class Config:
   load_from_ckpt: str = ""
 
 
+def save(path, sae, optimizer, tracker, idx, cfg):
+  state_dict = {
+    "sae": sae.state_dict(),
+    "opt": optimizer.state_dict(),
+    "tracker": logger._tracker.id,
+    "idx": idx,
+    "cfg": asdict(cfg),
+  }
+  torch.save(state_dict, path)
+
 if __name__ == "__main__":
   cfg = Config(
     sae=SAE.Config(
       d_act=2560, d_feat=2560*16, subtract_decoder_bias=True,
-      train_with_scaled_version=True, l1_coeff = 1,
+      train_with_scaled_version=True, l1_coeff = 0.5,
     ),
     data=DataConfig(
       model="Qwen/Qwen3-4B-Base",
@@ -179,11 +189,12 @@ if __name__ == "__main__":
       tracker="wandb",
       tracker_config=LoggingConfig.WandbConfig(
         project="sae-qwen4b-layer33",
-        name="Train using scaled input",
+        name="Train using scaled input, l1_coeff 0.5",
         notes="We calculate based on the scaled input and output.",
       ),
       log_every_n_steps=20
-    )
+    ),
+    load_from_ckpt="/Users/john/dawnet/dawnet/experimentals/sae_training/temp/qwen4b-base_scaled_input_coeff1.pkl"
   )
 
   ckpt = None
@@ -213,7 +224,7 @@ if __name__ == "__main__":
 
   # load from checkpoint
   if ckpt is not None:
-    cfg.logging.tracker_config.id = ckpt['tracker']
+    cfg.logging.tracker_config.id = ckpt["tracker"]
   logger = Logger.from_config(cfg.logging)
 
   # initialize the SAE (standard SAE)
@@ -229,7 +240,7 @@ if __name__ == "__main__":
   if ckpt is not None:
     optimizer.load_state_dict(ckpt["opt"])
 
-  if ckpt is not None:
+  if ckpt is None:
     state_dict = {
       "sae": sae.state_dict(),
       "opt": optimizer.state_dict()
@@ -249,12 +260,12 @@ if __name__ == "__main__":
       loss.backward()
       optimizer.step()
       optimizer.zero_grad()
-      if idx % 100 == 0:
+      if (idx > 1000) and idx % 100 == 0:
         print(
           f"{idx=}: {loss.item()=} {info} "
           f"{round((time.time() - start_time) / (idx+1), 4)}s/it"
         )
-      if idx % 5000 == 0:
+      if (idx > 1000) and idx % 5000 == 0:
         with torch.no_grad():
           l0, mse, explained_variance = sae.evaluate(batch)
           dead_over_5000 = (sae.n_iter_since_last_active > 5000).sum()
@@ -292,11 +303,8 @@ if __name__ == "__main__":
         import pdb; pdb.set_trace()
       elif in_ == 2:
         in2_ = input("Specify path: ")
-        state_dict = {
-          "sae": sae.state_dict(),
-          "opt": optimizer.state_dict()
-        }
-        torch.save(state_dict, in2_)
+        save(in2_, sae=sae, optimizer=optimizer, tracker=logger,
+             idx=idx, cfg=cfg)
       elif in_ == 3:
         print("Continue training...")
       elif in_ == 4:
@@ -305,11 +313,8 @@ if __name__ == "__main__":
       print("Closed pdb")
       continue
 
-  state_dict = {
-    "sae": sae.state_dict(),
-    "opt": optimizer.state_dict()
-  }
-  torch.save(state_dict, sae_name)
+  save(sae_name, sae=sae, optimizer=optimizer, tracker=logger,
+       idx=idx, cfg=cfg)
   logger.close()
 
 # vim: ts=2 sts=2 sw=2 et
