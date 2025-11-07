@@ -7,10 +7,10 @@ from matplotlib.colors import LinearSegmentedColormap
 
 def visualize_attention_mask(
     attention_mask: torch.Tensor,
-    method: str='heatmap',
+    method: str = 'heatmap',
     head_indices=None,
     figsize=(15, 10),
-    save_path:str | None=None
+    save_path: str | None = None
 ):
   """
     Visualize transformer attention mask with multiple approaches.
@@ -227,10 +227,10 @@ def analyze_attention_patterns(attention_mask):
 
   # Check for common patterns
   diagonal_attention = np.mean(
-    [
-      np.diag(mask[i, j]) for i in range(mask.shape[0])
-      for j in range(mask.shape[1])
-    ]
+      [
+          np.diag(mask[i, j]) for i in range(mask.shape[0])
+          for j in range(mask.shape[1])
+      ]
   )
   print(f"Average diagonal attention: {diagonal_attention:.3f}")
 
@@ -238,5 +238,70 @@ def analyze_attention_patterns(attention_mask):
   threshold = 0.1  # Adjust based on your mask values
   sparsity = (mask < threshold).mean()
   print(f"Sparsity (< {threshold}): {sparsity:.1%}")
+
+
+def extract_top_attention_indices(
+    state: dict,
+    n_layers: int,
+    attention_threshold: float = 0.95,
+    layer_key_template: str = 'model.layers.{}.self_attn'
+) -> dict:
+  """Extract the most important attention indices for each token in each head of
+  each layer.
+
+  For each position, finds the minimal set of tokens whose cumulative attention 
+  weights exceed the specified threshold.
+
+  Args:
+    state: Dictionary containing model outputs with attention weights
+    n_layers: Number of transformer layers to process
+    attention_threshold: Cumulative attention threshold (default: 0.95 for 95%)
+    layer_key_template: Template string for accessing layer attention in state dict
+
+  Returns:
+    dict (layer_idx, head_idx, token_idx) -> list of important token indices
+
+  Example:
+    >>> important_tokens = extract_top_attention_indices(model_state, n_layers=12)
+    >>> # Get tokens that position 5 in head 3 of layer 2 attends to:
+    >>> important_tokens[(2, 3, 5)]
+    [5, 4, 3, 8, 1]  # Indices of tokens receiving 95% of attention
+  """
+  most_important_indices = {}
+
+  for layer_idx in range(n_layers):
+    # Extract attention tensor for current layer
+    layer_key = layer_key_template.format(layer_idx)
+    attn = state['output'][layer_key][1].squeeze(0)  # Remove batch dim: HxNxN
+
+    # Sort attention weights in descending order for all positions
+    sorted_values, sorted_indices = attn.sort(dim=-1, descending=True)
+
+    # Compute cumulative sum and find where threshold is exceeded
+    cumsum = torch.cumsum(sorted_values, dim=-1)
+    exceeds_threshold = cumsum > attention_threshold
+
+    # Find first position exceeding threshold (add 1 for inclusive count)
+    threshold_positions = exceeds_threshold.int().argmax(dim=-1) + 1  # HxN
+
+    # Handle edge case: if cumsum never exceeds threshold, take all tokens
+    # argmax returns 0 when no True values exist, so we check the last cumsum value
+    never_exceeds = cumsum[..., -1] <= attention_threshold
+    threshold_positions[never_exceeds] = attn.shape[-1]
+
+    # Move to CPU once for efficiency
+    sorted_indices_cpu = sorted_indices.cpu()
+    threshold_positions_cpu = threshold_positions.cpu()
+
+    # Store results for each head and token position
+    num_heads, seq_len = attn.shape[0], attn.shape[1]
+    for head_idx in range(num_heads):
+      for token_idx in range(seq_len):
+        count = threshold_positions_cpu[head_idx, token_idx].item()
+        important_indices = sorted_indices_cpu[head_idx, token_idx, :count].tolist()
+        most_important_indices[(layer_idx, head_idx, token_idx)] = important_indices
+
+  return most_important_indices
+
 
 # vim: ts=2 sts=2 sw=2 et

@@ -627,3 +627,113 @@ class LLMInspector(Inspector):
         insp = cls(model)
         insp.tokenizer = tokenizer
         return insp
+
+    def encode(self, msg: list | str | torch.Tensor, chat: bool = False):
+        if chat:
+            if isinstance(msg, str):
+                msg = [{"role": "user", "content": msg}]
+            if isinstance(msg, list):
+                if msg and isinstance(msg[0], dict):
+                    if self.tokenizer is None:
+                        raise ValueError(
+                            "Missing tokenizer. Attach tokenizer with insp.tokenizer = ..."
+                        )
+                    tokens = self.tokenizer.apply_chat_template(
+                        msg, add_generation_prompt=True, return_tensors="pt"
+                    )
+                elif msg and isinstance(msg[0], int):
+                    tokens = torch.tensor(msg, dtype=torch.int)
+                else:
+                    raise ValueError(f"{msg} What is this?")
+            else:
+                tokens = msg
+        else:
+            if isinstance(msg, str):
+                if self.tokenizer is None:
+                    raise ValueError(
+                        "Missing tokenizer. Attach tokenizer with insp.tokenizer = ..."
+                    )
+                tokens = self.tokenizer.encode(msg, return_tensors="pt")
+            elif isinstance(msg, list):
+                tokens = torch.tensor(msg, dtype=torch.int)
+            else:
+                tokens = msg
+
+        tokens = tokens.to(device=self.model.device)
+
+        return tokens
+
+    def generate(self, msg: list | str | torch.Tensor, max_new_tokens=4096):
+        from .tokens import Tokens
+        tokens = self.encode(msg)
+        completed_tokens = Tokens(
+            tensor=self.model.generate(tokens, max_new_tokens=max_new_tokens),
+            tokenizer=self.tokenizer
+        )
+        return completed_tokens
+
+    def infer(self, msg: list | str | torch.Tensor):
+        tokens = self.encode(msg)
+        out_tensor = self.model(msg)
+        return LogitsTensor(logits=out_tensor.logits[0], tokenizer=self.tokenizer)
+
+
+class LogitsTensor:
+    """A wrapper of logits tensor to aid with quickly inspecting the logits
+
+    Args:
+        logits: 1D or 2D tensor, if 1D, we only concern about logits of a single token
+            if 2D, we are dealing with logits of multiple tokens (possibly the whole
+            generated sequence)
+        tokenizer: the tokenizer to interpret this generated logits
+        idxs: the index inside the logits that we want to focus on
+    """
+    def __init__(self, logits, tokenizer, idxs: list|None=None):
+        self._logits = logits
+        self.tokenizer = tokenizer
+        self.idxs: list = idxs if idxs is not None else []
+
+    def __getitem__(self, idx):
+        return LogitsTensor(
+            logits=self.logits, tokenizer=self.tokenizer, idxs=self.idxs + [idx]
+        )
+
+    def argmax(self):
+        logits = self.logits
+        if len(logits.shape) > 1:
+            logits = logits[-1]
+        tok_idx = logits.argmax()
+        toks = self.tokenizer.decode(tok_idx)
+        return tok_idx, toks
+
+    def topk(self, k):
+        logits = self.logits
+        if len(logits.shape) > 1:
+            logits = logits[-1]
+        top = logits.topk(k)
+        toks = [self.tokenizer.decode(each) for each in top.indices]
+        return top.values, top.indices, toks
+
+    @property
+    def logits(self):
+        logits = self._logits
+        for idx in self.idxs:
+            logits = logits[idx]
+        return logits
+
+    def shape(self):
+        return self.logits.shape
+
+
+def get_attention_contrib():
+    most_important = {}
+    for layer_idx in range(36):
+        attn = state['output'][f'model.layers.{layer_idx}.self_attn'][1]   # BxN
+        sorted_attn = attn[0].sort(dim=-1, descending=True)   # N
+        sorted_values = (torch.cumsum(sorted_attn.values, dim=-1) > 0.95).nonzero().min(dim=-1) + 1     # N
+        for head_idx in range(attn.shape[1]):
+            for token_idx in range(attn.shape[2]):
+                most_important[(layer_idx, head_idx, token_idx)] = sorted_attn.indices[
+                    head_idx,token_idx,:sorted_values[head_idx, token_idx].item()
+                ].cpu().tolist()
+    return most_important
