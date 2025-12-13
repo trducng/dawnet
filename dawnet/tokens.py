@@ -68,7 +68,7 @@ class Tokens:
                 font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
                 font-size: 12px;
                 line-height: 1.2;
-                padding: 20px;
+                padding: 20px 20px 60px;
                 background-color: #ffffff;
                 border: 1px solid #ddd;
                 border-radius: 8px;

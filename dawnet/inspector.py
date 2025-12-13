@@ -320,11 +320,12 @@ class Inspector(nn.Module):
     return self._original_model
 
   def add(
-      self,
-      op: Op,
-      name: str | list[str] | None = None,
-      name_filter: Callable | None = None,
-      name_regex: str | None = None,
+    self,
+    op: Op,
+    name: str | list[str] | None = None,
+    name_filter: Callable | None = None,
+    name_regex: str | None = None,
+    verbose: bool = True,
   ) -> Op:
     """Add op to the inspector
 
@@ -345,7 +346,8 @@ class Inspector(nn.Module):
       if layer not in self._module_to_op:
         self._module_to_op[layer] = []
       self._module_to_op[layer].append(op)
-    print(f"Added to layer {layers}")
+    if verbose:
+      print(f"Added to layer {layers}")
 
     self._ops[op.id] = OpInfo(op=op, layers=layers, enabled=True)
     self.ops.append(op)
@@ -722,6 +724,7 @@ class LogitsTensor:
     )
 
   def argmax(self):
+    """Get the highest class for the last token"""
     logits = self.logits
     if len(logits.shape) > 1:
       logits = logits[-1]
@@ -746,6 +749,9 @@ class LogitsTensor:
 
   def shape(self):
     return self.logits.shape
+
+  def __str__(self):
+    return f"LogitTensors (shape {self.logits.shape}): {self.argmax()}"
 
 
 def get_attention_contrib():
