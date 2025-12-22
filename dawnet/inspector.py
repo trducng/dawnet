@@ -606,15 +606,22 @@ class Inspector(nn.Module):
 class LLMInspector(Inspector):
   """Inspector with utilities specialized for LLM"""
   _MODELS = {
+    "deepseekv3.2": "deepseek-ai/DeepSeek-V3.2",
     "gemma-7b": "google/gemma-7b-it",
     "gemma2-2b": "google/gemma-2-2b-it",
     "gemma3-4b": "google/gemma-3-4b-it",
     "gemma3-27b": "google/gemma-3-27b-it",
-    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "glm4.6": "zai-org/GLM-4.6",
+    "gptoss-120b": "openai/gpt-oss-120b",
+    "gptoss-20b": "openai/gpt-oss-20b",
+    "mistral3": "mistralai/Mistral-Large-3-675B-Instruct-2512",
+    "ministral3-8b-instruct": "mistralai/Ministral-3-8B-Instruct-2512",
+    "olmo3.1-32b-think": "allenai/Olmo-3.1-32B-Instruct",
     "qwen3-4b": "Qwen/Qwen3-4B",
     "qwen3-4b-instruct": "Qwen/Qwen3-4B-Instruct-2507",
     "qwen3-4b-thinking": "Qwen/Qwen3-4B-Thinking-2507",
     "qwen3-30b": "Qwen/Qwen3-30B-A3B-Base",
+    "phi4": "microsoft/phi-4",
   }
 
   def __init__(
