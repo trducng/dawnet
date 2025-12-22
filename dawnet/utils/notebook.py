@@ -1,5 +1,5 @@
 # Utility functions for Google colab support
-# @author: _john
+# @author: trducng
 # =============================================================================
 import os
 import multiprocessing

@@ -605,6 +605,18 @@ class Inspector(nn.Module):
 
 class LLMInspector(Inspector):
   """Inspector with utilities specialized for LLM"""
+  _MODELS = {
+    "gemma-7b": "google/gemma-7b-it",
+    "gemma2-2b": "google/gemma-2-2b-it",
+    "gemma3-4b": "google/gemma-3-4b-it",
+    "gemma3-27b": "google/gemma-3-27b-it",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "qwen3-4b": "Qwen/Qwen3-4B",
+    "qwen3-4b-instruct": "Qwen/Qwen3-4B-Instruct-2507",
+    "qwen3-4b-thinking": "Qwen/Qwen3-4B-Thinking-2507",
+    "qwen3-30b": "Qwen/Qwen3-30B-A3B-Base",
+  }
+
   def __init__(
       self,
       model: nn.Module,
@@ -619,6 +631,8 @@ class LLMInspector(Inspector):
         include_backward=include_backward
     )
     self._tokenizer = getattr(model, "tokenizer", None)
+    self.model_id = None
+    self.device = None
 
   @property
   def tokenizer(self):
@@ -636,6 +650,8 @@ class LLMInspector(Inspector):
     tokenizer = AutoTokenizer.from_pretrained(name)
     insp = cls(model)
     insp.tokenizer = tokenizer
+    insp.model_id = name
+    insp.device = model.device
     return insp
 
   def encode(self, msg: list | str | torch.Tensor, chat: bool = False):
