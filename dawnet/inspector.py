@@ -499,9 +499,6 @@ class Inspector(nn.Module):
         )
         module.register_full_backward_hook(Handler(name, "backward", self))
 
-  def check_regex(self):
-    ...
-
   def save(self, location):
     import dill
 

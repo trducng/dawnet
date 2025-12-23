@@ -16,49 +16,23 @@ class ManifoldExperiment:
   def __init__(self, insp, ndim=2):
     self.insp = insp
     self.ndim = ndim
-    self.tokens, self.classes = self.prepare_tokens()
     self.get_op = None
     self.embed_name = None
 
     self._add_bos_token = False
-    if hasattr("add_bos_token", self.insp.tokenizer):
+    if hasattr(self.insp.tokenizer, "add_bos_token"):
       self._add_bos_token = self.insp.tokenizer.add_bos_token
 
     # raw columns -> might treat this as sqlite to manage relationship
     self.phrases, self.raw_pos, self.labels, self.styles, self.skip_add_bos = [], [], [], [], []
 
     # processed from insp
-    self.pos = [], []   # depend on insp model
+    self.tokens, self.pos = [], []  # depend on insp model
     self.acts, self.names = {}, []
 
-    # for visualization
-    self.words, self.word_to_phrase = [], []
-
-  def prepare_tokens(self):
-    try:
-      add_bos_token = self.insp.tokenizer.add_bos_token
-    except:
-      add_bos_token = False
-
-    tokens, classes = [], []
-    for cat, wl in self.words.items():
-      we = {}
-      for w in wl:
-        _tok = self.insp.tokenizer.encode(f' {w}', return_tensors="pt").to(
-          self.insp.model.device
-        )
-        if add_bos_token:
-          _tok = _tok[:, -1:]
-        _tok = _tok[0]
-        if len(_tok.shape) > 1:
-          print(w, _tok.shape)
-          continue
-        tokens.append(_tok)
-        classes.append((cat, w))
-
-    tokens = torch.stack(tokens)
-    print(f"Constructed tokens: {tokens.shape=}")
-    return tokens, classes  # len(classes) == tokens.shape[0]
+    # coordinates for visualization
+    self.pcas = {}
+    self.wlabels, self.wstyles = [], []
 
   def add_phrase(
    self, phrase: str, pos: str | Literal[-1, 0]=-1, label="default", style="o", skip_add_bos=True,
@@ -113,7 +87,7 @@ class ManifoldExperiment:
         else:
           self.pos.append(list(range(len(tokens))))
 
-  def build_coordinate(self, embed_name=None, layers=None):
+  def collect_activations(self, embed_name=None, layers=None):
     """Build the coordinates to visualize
 
     Output:
@@ -140,22 +114,22 @@ class ManifoldExperiment:
         if re.match(r".*layers.\d+$", n):
           layers.append(n)
 
-    self.names = [embed_name] + layers
+    names = [embed_name] + layers
 
     if self.get_op is not None:
       self.insp.remove(self.get_op)
-    self.get_op = self.insp.add(GetOutput(), name=self.names)
+    self.get_op = self.insp.add(GetOutput(), name=names)
     with self.insp.ctx() as state:
-      acts = {n: [] for n in self.names}
+      acts = {n: [] for n in names}
       for idx, phrase in enumerate(self.phrases):
-        token = self.insp.tokenizer.encode(phrase, return_tensor="pt").to(
+        token = self.insp.tokenizer.encode(phrase, return_tensors="pt").to(
           self.insp.device
         )
         if self.skip_add_bos[idx]:
           token = token[:,1:]
         _ = self.insp.model(token)
 
-        for name in self.names:
+        for name in names:
           if name not in state['output']:
             continue
 
@@ -168,63 +142,71 @@ class ManifoldExperiment:
             print(f"Unknown type for {name}: {type(state['output']['name'])}")
             continue
 
-          # batch has shape b x t x d
+          # batch has shape b x t x d -> t x d
           act = tensor[0,self.pos[idx],:].cpu().float().numpy()
-          self.acts[name].append(act)
+          acts[name].append(act)
 
-    del state
+    # might be inefficient if we have lots of words, but let's refactor for
+    # efficiency when we need, for crude research this is good enough
+    self.acts, self.names = {}, []
+    for k in names:
+      v = acts[k]
+      if not v:
+        continue
+      self.acts[k] = np.concatenate(v, axis=0)
+      self.names.append(k)
 
-    # free CUDA, RAM memory
-    return out
+    # construct self.wlabels, self.wstyles
+    v = self.acts[self.names[0]]
+    for idx in range(len(self.phrases)):
+      self.wlabels += [self.labels[idx]] * len(self.pos[idx])
+      self.wstyles += [self.styles[idx]] * len(self.pos[idx])
 
-  def show_notebook(self, figsize=None):
+    # TODO: free CUDA, RAM memory, save the acts to disk if necessary then treat it
+    # as memmap
+    return
 
+  def build_coordinates(self, coord_system=None):
+    """Build the coordinate system
+
+    Args:
+      coord_system: name of the layer that will be treated as coordinate system to
+        transform the activation. If not provided, each layer construct its own
+        coordinate system.
+    """
+    systems = self.names if coord_system is None else [coord_system]
+    for s in systems:
+      scaler = StandardScaler()
+      x_scaled = scaler.fit_transform(self.acts[s])
+      pca = PCA(n_components=self.ndim)
+      pca.fit(x_scaled)
+      self.pcas[s] = (scaler, pca)
+
+  def show_notebook(self, coord_system=None):
+    """Visualize in a notebook"""
     cols = min(3, len(self.acts))
     rows = (len(self.acts) + cols - 1) // cols
-    classes = [i[0] for i in self.classes]
-
-    if figsize is None:
-      figsize = (5 * cols, 4 * rows)
-
+    figsize = (5 * cols, 4 * rows)
     fig, axes = plt.subplots(rows, cols, figsize=figsize)
     if rows == 1 and cols == 1:
         axes = [axes]
     else:
         axes = axes.flatten()
 
-    x = self.acts[self.embed_name]
-    # here, each layer will have a different scaler (might not be appropriate to
-    # visualize across layers) because it will not be of the same language
-    # but we can't expect representation in different layers to share the same scale
-    scaler = StandardScaler()
-    x_scaled = scaler.fit_transform(x)
-    pca = PCA(n_components=self.ndim)
-    x_pca = pca.fit_transform(x_scaled)
-
-    sns.scatterplot(x=x_pca[:,0], y=x_pca[:,1], hue=classes, ax=axes[0])
-    axes[0].set_title(self.embed_name)
-
-    for idx, n in enumerate(self.acts.keys()):
-      if n == self.embed_name:
-        continue
-
-      x = self.acts[n]
-
-      scaler = StandardScaler()
-      x_scaled = scaler.fit_transform(x)
-      pca = PCA(n_components=self.ndim)
-      x_pca = pca.fit_transform(x_scaled)
-      #x_scaled = scaler.transform(x)
-      # x_pca = pca.transform(x_scaled)
-      sns.scatterplot(x=x_pca[:,0], y=x_pca[:,1], hue=classes, ax=axes[idx])
-      axes[idx].set_title(n)
+    for idx, name in enumerate(self.names):
+      system = name if coord_system is None else coord_system
+      if system not in self.pcas:
+        self.build_coordinates(system)
+      scaler, pca = self.pcas[system]
+      x_scaled = scaler.transform(self.acts[name])
+      x_pca = pca.transform(x_scaled)
+      sns.scatterplot(
+        x=x_pca[:,0], y=x_pca[:,1], hue=self.wlabels, style=self.wstyles, ax=axes[idx]
+      )
+      axes[idx].set_title(name)
 
     fig.tight_layout()
     return fig
-
-  def process_special_phrase(self):
-    # attach special phrase -> create a phrase object
-    pass
 
   def save(self, path):
     ...
@@ -232,8 +214,5 @@ class ManifoldExperiment:
   @classmethod
   def load(cls, path):
     ...
-
-if __name__ == "__main__":
-  ...
 
 # vim: ts=2 sts=2 sw=2 et
