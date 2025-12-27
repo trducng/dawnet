@@ -222,13 +222,17 @@ class ManifoldExperiment:
       pos_ = (pca.components_ > 0).astype(int)
       for dim in range(pca.components_.shape[0]):
         if np.abs(positive[dim] - pos_[dim]).sum() > (positive[dim].shape[0] // 2):
-          print("Swapping", key, dim)
           pca.components_[dim] = pca.components_[dim] * -1
       positive = (pca.components_ > 0).astype(int)
 
-  def show_notebook(self, coord_system=None, active_labels=None):
+  def show_notebook(self, coord_system=None, active_labels=None, layers=None):
     """Visualize in a notebook"""
-    cols = min(3, len(self.acts))
+    if layers is None:
+      layers = self.names
+    elif isinstance(layers, str):
+      layers = [layers]
+
+    cols = min(3, len(layers))
     rows = (len(self.acts) + cols - 1) // cols
     figsize = (5 * cols, 4 * rows)
     fig, axes = plt.subplots(rows, cols, figsize=figsize)
@@ -246,7 +250,7 @@ class ManifoldExperiment:
       labels = [l if l in active_labels else "other_" for l in self.wlabels]
 
     n_labels = len(set(labels))
-    for idx, name in enumerate(self.names):
+    for idx, name in enumerate(layers):
       system = name if coord_system is None else coord_system
       if system not in self.pcas:
         self.build_coordinates(system)
@@ -261,6 +265,9 @@ class ManifoldExperiment:
       # handle legend
       legend_handles, legend_labels = axes[idx].get_legend_handles_labels()
       axes[idx].legend(legend_handles[:n_labels], legend_labels[:n_labels])
+
+    for idx in range(len(layers), rows * cols):
+      axes[idx].remove()
 
     # title
     fig.suptitle(
