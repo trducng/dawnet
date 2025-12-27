@@ -25,17 +25,18 @@ class ManifoldExperiment:
 
     # raw columns -> might treat this as sqlite to manage relationship
     self.phrases, self.raw_pos, self.labels, self.styles, self.skip_add_bos = [], [], [], [], []
+    self.sizes = []
 
     # processed from insp
-    self.tokens, self.pos = [], []  # depend on insp model
+    self.flattened_tokens, self.pos = [], []  # depend on insp model
+    self.wlabels, self.wstyles, self.wsizes = [], [], []
     self.acts, self.names = {}, []
 
     # coordinates for visualization
     self.pcas = {}
-    self.wlabels, self.wstyles = [], []
 
   def add_phrase(
-   self, phrase: str, pos: str | Literal[-1, 0]=-1, label="default", style="o", skip_add_bos=True,
+   self, phrase: str, pos: str | Literal[-1, 0]=-1, label="default", style="o", size=1, skip_add_bos=True,
   ):
     """Construct the phrase
 
@@ -50,8 +51,10 @@ class ManifoldExperiment:
     self.raw_pos.append(pos)
     self.labels.append(label)
     self.styles.append(style)
+    self.sizes.append(size)
     self.skip_add_bos.append(self._add_bos_token and skip_add_bos)
 
+    tokens = self.insp.tokenizer.tokenize(phrase)
     if isinstance(pos, str):
       str_idx, token_idx = [], []
       idx = phrase.index(pos)
@@ -62,37 +65,70 @@ class ManifoldExperiment:
       if not str_idx:
         raise ValueError(f"Cannot find pattern {pos} in phrase {phrase}")
 
-      tokenized = self.insp.tokenizer.tokenize(phrase)
       cidx = 0
-      for idx, tok in enumerate(tokenized):
+      for idx, tok in enumerate(tokens):
         if not str_idx:
           break
         cidx += len(tok)
         if cidx > str_idx[0]:
+          self.flattened_tokens.append(tokens[idx])
           if self._add_bos_token:
             token_idx.append(idx+1)
           else:
             token_idx.append(idx)
           str_idx = str_idx[1:]
-      self.tokens.append(self.insp.tokenizer.encode(phrase))
       self.pos.append(token_idx)
     else:
-      tokens = self.insp.tokenizer.encode(phrase)
-      self.tokens.append(tokens)
       if pos == -1:
         self.pos.append([-1,])
+        self.flattened_tokens.append(tokens[-1])
       else:
+        self.flattened_tokens += tokens[-1]
         if self._add_bos_token:
           self.pos.append(list(range(1, len(tokens)+1)))
         else:
           self.pos.append(list(range(len(tokens))))
 
-  def collect_activations(self, embed_name=None, layers=None):
-    """Build the coordinates to visualize
+    self.wlabels += [label] * len(self.pos[-1])
+    self.wstyles += [style] * len(self.pos[-1])
+    self.wsizes += [size] * len(self.pos[-1])
 
-    Output:
-      - PCA coordinate for each layer
-      - X_transformed for each layer
+    if not self.acts:
+      return
+
+    with self.insp.ctx() as state:
+      token = self.insp.tokenizer.encode(phrase, return_tensors="pt").to(
+        self.insp.device
+      )
+      if self._add_bos_token and skip_add_bos:
+        token = token[:,1:]
+      _ = self.insp.model(token)
+
+      for name in self.names:
+        if name not in state['output']:
+          continue
+
+        if isinstance(state['output'][name], tuple):
+          # TODO: make this an implementation of state.output
+          # usually the 1st item is the main output
+          tensor = state['output'][name][0]
+        elif isinstance(state['output'][name], torch.Tensor):
+          tensor = state['output'][name]
+        else:
+          print(f"Unknown type for {name}: {type(state['output']['name'])}")
+          continue
+
+        # batch has shape b x t x d -> t x d
+        act = tensor[0,self.pos[-1],:].cpu().float().numpy()
+        self.acts[name] = np.concatenate([self.acts[name], act], axis=0)
+
+  def collect_activations(self, embed_name=None, layers=None):
+    """Collect the activations of the support set (phrase)
+
+    Args:
+      embed_name: module name of the embedding layer
+      layers: list of module to collect the activation, if None, will use common
+        heuristic to get output of main layer blocks
     """
     if embed_name is None:
       candidates = []
@@ -156,12 +192,6 @@ class ManifoldExperiment:
       self.acts[k] = np.concatenate(v, axis=0)
       self.names.append(k)
 
-    # construct self.wlabels, self.wstyles
-    v = self.acts[self.names[0]]
-    for idx in range(len(self.phrases)):
-      self.wlabels += [self.labels[idx]] * len(self.pos[idx])
-      self.wstyles += [self.styles[idx]] * len(self.pos[idx])
-
     # TODO: free CUDA, RAM memory, save the acts to disk if necessary then treat it
     # as memmap
     return
@@ -182,7 +212,21 @@ class ManifoldExperiment:
       pca.fit(x_scaled)
       self.pcas[s] = (scaler, pca)
 
-  def show_notebook(self, coord_system=None):
+    # use similar left-right, top-down alignment
+    positive = None
+    for key in self.pcas.keys():
+      pca = self.pcas[key][1]
+      if positive is None:
+        positive = (pca.components_ > 0).astype(int)
+        continue
+      pos_ = (pca.components_ > 0).astype(int)
+      for dim in range(pca.components_.shape[0]):
+        if np.abs(positive[dim] - pos_[dim]).sum() > (positive[dim].shape[0] // 2):
+          print("Swapping", key, dim)
+          pca.components_[dim] = pca.components_[dim] * -1
+      positive = (pca.components_ > 0).astype(int)
+
+  def show_notebook(self, coord_system=None, active_labels=None):
     """Visualize in a notebook"""
     cols = min(3, len(self.acts))
     rows = (len(self.acts) + cols - 1) // cols
@@ -193,6 +237,15 @@ class ManifoldExperiment:
     else:
         axes = axes.flatten()
 
+    if active_labels is None:
+      labels = self.wlabels
+    else:
+      if not isinstance(active_labels, (list, set, tuple)):
+        active_labels = [active_labels]
+      active_labels = set(active_labels)
+      labels = [l if l in active_labels else "other_" for l in self.wlabels]
+
+    n_labels = len(set(labels))
     for idx, name in enumerate(self.names):
       system = name if coord_system is None else coord_system
       if system not in self.pcas:
@@ -201,12 +254,55 @@ class ManifoldExperiment:
       x_scaled = scaler.transform(self.acts[name])
       x_pca = pca.transform(x_scaled)
       sns.scatterplot(
-        x=x_pca[:,0], y=x_pca[:,1], hue=self.wlabels, style=self.wstyles, ax=axes[idx]
+        x=x_pca[:,0], y=x_pca[:,1], hue=labels, size=self.wsizes, style=self.wstyles, ax=axes[idx],
       )
       axes[idx].set_title(name)
 
-    fig.tight_layout()
+      # handle legend
+      legend_handles, legend_labels = axes[idx].get_legend_handles_labels()
+      axes[idx].legend(legend_handles[:n_labels], legend_labels[:n_labels])
+
+    # title
+    fig.suptitle(
+      f"{self.insp.model_id} - {coord_system or 'All'}", fontsize=16, fontweight="bold"
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.98 if rows >= 9 else 0.96))
     return fig
+
+  def search_phrase(self, phrase_regex="", verbose: bool = True):
+    """Search for phrases to get phrase and associated index that match"""
+    if not phrase_regex:
+      return []
+
+    pattern = re.compile(phrase_regex)
+    result = []
+    c = 0
+    for idx, phrase in enumerate(self.phrases):
+      if pattern.search(phrase):
+        result.append((idx, tuple(range(c, c+len(self.pos[idx])))))
+      c += len(self.pos[idx])
+
+    return result
+
+  def delete_phrase(self, idx):
+    c = 0
+    for i in range(idx):
+      c += len(self.pos[i])
+
+    self.phrases.pop(idx)
+    self.raw_pos.pop(idx)
+    self.labels.pop(idx)
+    self.styles.pop(idx)
+    self.skip_add_bos.pop(idx)
+
+    pos = self.pos.pop(idx)
+    s = c-len(pos)
+    self.flattened_tokens = self.flattened_tokens[:s] + self.flattened_tokens[c:]
+    self.wlabels = self.wlabels[:s] + self.wlabels[c:]
+    self.wstyles = self.wstyles[:s] + self.wstyles[c:]
+    to_delete = list(range(s,c))
+    for key in self.acts:
+      self.acts[key] = np.delete(self.acts[key], obj=to_delete, axis=0)
 
   def save(self, path):
     ...
