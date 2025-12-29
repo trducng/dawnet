@@ -225,18 +225,20 @@ class ManifoldExperiment:
           pca.components_[dim] = pca.components_[dim] * -1
       positive = (pca.components_ > 0).astype(int)
 
-  def show_notebook(self, coord_system=None, active_labels=None, layers=None):
+  def show_notebook(
+    self, coord_system=None, active_labels=None, layers=None, show_title=True, max_cols=3
+  ):
     """Visualize in a notebook"""
     if layers is None:
       layers = self.names
     elif isinstance(layers, str):
       layers = [layers]
 
-    cols = min(3, len(layers))
-    rows = (len(self.acts) + cols - 1) // cols
-    figsize = (5 * cols, 4 * rows)
+    cols = min(max_cols, len(layers))
+    rows = (len(layers) + cols - 1) // cols
+    figsize = None if rows * cols == 1 else (5 * cols, 4 * rows)
     fig, axes = plt.subplots(rows, cols, figsize=figsize)
-    if rows == 1 and cols == 1:
+    if rows * cols == 1:
         axes = [axes]
     else:
         axes = axes.flatten()
@@ -258,7 +260,8 @@ class ManifoldExperiment:
       x_scaled = scaler.transform(self.acts[name])
       x_pca = pca.transform(x_scaled)
       sns.scatterplot(
-        x=x_pca[:,0], y=x_pca[:,1], hue=labels, size=self.wsizes, style=self.wstyles, ax=axes[idx],
+        x=x_pca[:,0], y=x_pca[:,1], hue=labels, size=self.wsizes,
+        style=self.wstyles, ax=axes[idx],
       )
       axes[idx].set_title(name)
 
@@ -270,10 +273,14 @@ class ManifoldExperiment:
       axes[idx].remove()
 
     # title
-    fig.suptitle(
-      f"{self.insp.model_id} - {coord_system or 'All'}", fontsize=16, fontweight="bold"
-    )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.98 if rows >= 9 else 0.96))
+    if show_title:
+      fig.suptitle(
+        f"{self.insp.model_id} - {coord_system or 'All'}", fontsize=16, fontweight="bold"
+      )
+      fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.98 if rows >= 9 else 0.96))
+    else:
+      fig.tight_layout()
+    plt.close(fig)
     return fig
 
   def search_phrase(self, phrase_regex="", verbose: bool = True):
