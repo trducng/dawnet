@@ -625,6 +625,7 @@ class LLMInspector(Inspector):
     "olmo3-7b-instruct": "allenai/Olmo-3-7B-Instruct",
     "olmo3-7b-zero": "allenai/Olmo-3-7B-RL-Zero-Math",
     "olmo3.1-32b-think": "allenai/Olmo-3.1-32B-Instruct",
+    "qwen3-0.6b": "Qwen/Qwen3-0.6B",
     "qwen3-4b": "Qwen/Qwen3-4B",
     "qwen3-4b-instruct": "Qwen/Qwen3-4B-Instruct-2507",
     "qwen3-4b-thinking": "Qwen/Qwen3-4B-Thinking-2507",
