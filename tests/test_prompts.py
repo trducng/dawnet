@@ -1,5 +1,12 @@
 """Tests for Prompt class"""
-from dawnet.prompts import Prompt
+import importlib.util
+from pathlib import Path
+
+# Import prompts module directly without going through dawnet.__init__
+spec = importlib.util.spec_from_file_location("prompts", Path(__file__).parent.parent / "dawnet" / "prompts.py")
+prompts_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(prompts_module)
+Prompt = prompts_module.Prompt
 
 
 def test_basic_parsing():
@@ -217,6 +224,74 @@ def test_materialize_unknown_variable():
   assert result == "{unknown_var} is here"
 
 
+def test_materialize_warns_on_nonexistent_parameter():
+  """Test that materialize warns when provided parameter doesn't exist in template"""
+  import warnings
+
+  prompt = Prompt("Hello {name}")
+
+  with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    result = prompt.materialize(name="Alice", typo="value")
+
+    # Should have one warning
+    assert len(w) == 1
+    assert issubclass(w[0].category, UserWarning)
+    assert "typo" in str(w[0].message)
+    assert "does not exist in template" in str(w[0].message)
+    assert "name" in str(w[0].message)  # Should show available variables
+
+  # Result should still work correctly
+  assert result == "Hello Alice"
+
+
+def test_materialize_warns_multiple_nonexistent():
+  """Test warning for multiple non-existent parameters"""
+  import warnings
+
+  prompt = Prompt("{name}")
+
+  with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    prompt.materialize(name="Alice", wrong1="a", wrong2="b")
+
+    # Should have two warnings
+    assert len(w) == 2
+    warning_messages = [str(warning.message) for warning in w]
+    assert any("wrong1" in msg for msg in warning_messages)
+    assert any("wrong2" in msg for msg in warning_messages)
+
+
+def test_materialize_no_warning_when_all_exist():
+  """Test that no warning when all parameters exist in template"""
+  import warnings
+
+  prompt = Prompt("Hello {name}, you are {age} years old")
+
+  with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    result = prompt.materialize(name="Alice", age="25")
+
+    # Should have no warnings
+    assert len(w) == 0
+
+  assert result == "Hello Alice, you are 25 years old"
+
+
+def test_materialize_no_warning_when_no_kwargs():
+  """Test that no warning when no kwargs provided"""
+  import warnings
+
+  prompt = Prompt("Hello {name}")
+
+  with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    result = prompt.materialize()
+
+    # Should have no warnings
+    assert len(w) == 0
+
+
 def test_save_and_load(tmp_path):
   """Test saving and loading prompts"""
   # Create a temporary file path
@@ -288,3 +363,177 @@ def test_consecutive_variables():
   prompt = Prompt("{first}{second}{third}")
   result = prompt.materialize(first="A", second="B", third="C")
   assert result == "ABC"
+
+
+# Tests for numeric suffix support
+def test_suffix_basic_recognition():
+  """Test that boy1 and boy2 sample different values from boy category"""
+  prompt = Prompt("{boy1} and {boy2}")
+  result = prompt.materialize()
+
+  # Should materialize both (not left as {boy1}, {boy2})
+  assert "{boy1}" not in result
+  assert "{boy2}" not in result
+
+  # Values should be different (boy1 and boy2 are different variables)
+  # Extract the two names from "Name1 and Name2"
+  parts = result.split(" and ")
+  assert len(parts) == 2
+  # With high probability they should be different (unless we got unlucky)
+  # Since there are 13 boys in the category, probability of same is 1/13
+
+
+def test_suffix_same_variable_same_value():
+  """Test that boy1 appearing twice gets the same value"""
+  prompt = Prompt("{boy1} and {boy1} are friends")
+  result = prompt.materialize()
+
+  # Extract the two occurrences
+  parts = result.split(" and ")
+  name1 = parts[0]
+  name2 = parts[1].split(" are ")[0]
+
+  # Should be the same
+  assert name1 == name2
+
+
+def test_suffix_with_choices_base_category():
+  """Test that add_choice(boy=[...]) works for boy1 and boy2"""
+  prompt = Prompt("{boy1} and {boy2}")
+  prompt.add_choice(boy=["John", "Mike", "Tom"])
+  sampled = prompt.sample()
+
+  # Both should be from the choices
+  assert sampled["boy1"] in ["John", "Mike", "Tom"]
+  assert sampled["boy2"] in ["John", "Mike", "Tom"]
+
+
+def test_suffix_with_choices_exact_override():
+  """Test that add_choice(boy1=[...]) overrides base category"""
+  prompt = Prompt("{boy1} and {boy2}")
+  prompt.add_choice(boy=["John", "Mike"], boy1=["Specific"])
+  sampled = prompt.sample()
+
+  # boy1 should use specific choice
+  assert sampled["boy1"] == "Specific"
+  # boy2 should use base category choice
+  assert sampled["boy2"] in ["John", "Mike"]
+
+
+def test_suffix_mixing_with_non_suffixed():
+  """Test template with both {boy} and {boy1}"""
+  prompt = Prompt("{boy} and {boy1}")
+  result = prompt.materialize()
+
+  # Both should be materialized
+  assert "{boy}" not in result
+  assert "{boy1}" not in result
+
+
+def test_suffix_multi_digit():
+  """Test multi-digit suffixes like boy10, boy123"""
+  prompt = Prompt("{boy10} and {boy123}")
+  result = prompt.materialize()
+
+  # Should materialize both
+  assert "{boy10}" not in result
+  assert "{boy123}" not in result
+
+
+def test_suffix_no_suffix_unchanged():
+  """Test that variables without suffix still work"""
+  prompt = Prompt("{location} is nice")
+  result = prompt.materialize()
+
+  # Should use location category
+  assert "{location}" not in result
+
+
+def test_suffix_edge_case_no_trailing_digits():
+  """Test name2name (no trailing digits) works unchanged"""
+  prompt = Prompt("{name2name}")
+  prompt.add_choice(name2name=["test"])
+  result = prompt.materialize()
+
+  assert result == "test"
+
+
+def test_suffix_edge_case_only_digits():
+  """Test variable with only digits like {123}"""
+  prompt = Prompt("{123}")
+  # Should not match any category (base would be empty string)
+  result = prompt.materialize()
+
+  # Should remain as template variable
+  assert result == "{123}"
+
+
+def test_suffix_kwargs_exact_match_only():
+  """Test that materialize kwargs require exact match"""
+  prompt = Prompt("{boy1} and {boy2}")
+
+  # Exact match should work
+  result1 = prompt.materialize(boy1="Alice", boy2="Bob")
+  assert result1 == "Alice and Bob"
+
+  # Base category in kwargs should NOT apply to suffixed variables
+  result2 = prompt.materialize(boy="Alice")
+  # boy1 and boy2 should NOT be "Alice"
+  assert "{boy1}" not in result2  # Should be materialized from category
+  assert "{boy2}" not in result2  # Should be materialized from category
+
+
+def test_suffix_sample_method():
+  """Test that sample method returns different values for boy1 and boy2"""
+  prompt = Prompt("{boy1} and {boy2}")
+  sampled = prompt.sample()
+
+  # Should have both keys
+  assert "boy1" in sampled
+  assert "boy2" in sampled
+
+  # Both should be valid boy names
+  boy_names = prompts_module.WORDS_BY_CATEGORY["boy"]
+  assert sampled["boy1"] in boy_names
+  assert sampled["boy2"] in boy_names
+
+
+def test_suffix_with_defaults():
+  """Test suffix with default values"""
+  prompt = Prompt("{boy1=DefaultBoy} and {boy2}")
+  sampled = prompt.sample()
+
+  # boy1 should use default
+  assert sampled["boy1"] == "DefaultBoy"
+  # boy2 should use category
+  assert sampled["boy2"] in prompts_module.WORDS_BY_CATEGORY["boy"]
+
+
+def test_suffix_priority_order():
+  """Test complete priority order with suffixes"""
+  prompt = Prompt("{boy1}")
+
+  # Test kwargs priority
+  sampled1 = prompt.sample(boy1="FromKwargs")
+  assert sampled1["boy1"] == "FromKwargs"
+
+  # Test exact choice priority
+  prompt.add_choice(boy1=["ExactChoice"])
+  sampled2 = prompt.sample()
+  assert sampled2["boy1"] == "ExactChoice"
+
+  # Test base choice priority (create new prompt)
+  prompt2 = Prompt("{boy1}")
+  prompt2.add_choice(boy=["BaseChoice"])
+  sampled3 = prompt2.sample()
+  assert sampled3["boy1"] == "BaseChoice"
+
+  # Test default priority (create new prompt)
+  prompt3 = Prompt("{boy1=DefaultValue}")
+  sampled4 = prompt3.sample()
+  assert sampled4["boy1"] == "DefaultValue"
+
+  # Test category priority (no choices, no defaults)
+  prompt4 = Prompt("{boy1}")
+  sampled5 = prompt4.sample()
+  assert sampled5["boy1"] in prompts_module.WORDS_BY_CATEGORY["boy"]

@@ -292,15 +292,34 @@ class Prompt:
       self._choices[var_name] = choices
     return self
 
+  def _get_base_category(self, var_name: str) -> str:
+    """Extract base category by stripping trailing digits
+
+    Examples:
+      boy1 -> boy
+      boy123 -> boy
+      location -> location (no change)
+      name2name -> name2name (no change)
+
+    Args:
+      var_name: Variable name to extract base category from
+
+    Returns:
+      Base category name (without trailing digits)
+    """
+    return re.sub(r'\d+$', '', var_name)
+
   def sample(self, **kwargs):
     """Sample values for all variables
 
     Returns a dictionary mapping variable names to sampled values.
-    Priority: kwargs > choices > default > category
+    Priority: kwargs > choices (exact then base) > default > category (base)
     Variables that cannot be sampled are excluded from the result.
 
+    Supports numeric suffixes: {boy1}, {boy2} both use "boy" category but get different values.
+
     Args:
-      **kwargs: Direct values to use for specific variables
+      **kwargs: Direct values to use for specific variables (exact match only)
 
     Returns:
       dict: Variable names mapped to their sampled values
@@ -314,11 +333,19 @@ class Prompt:
           if var_name in kwargs:
             var_values[var_name] = kwargs[var_name]
           elif var_name in self._choices:
+            # Try exact name first
             var_values[var_name] = random.choice(self._choices[var_name])
-          elif part['default']:
-            var_values[var_name] = part['default']
-          elif var_name in self._DEFAULT_CATEGORY:
-            var_values[var_name] = random.choice(self._DEFAULT_CATEGORY[var_name])
+          else:
+            # Try base category in choices (for suffix support)
+            base_category = self._get_base_category(var_name)
+            if base_category != var_name and base_category in self._choices:
+              var_values[var_name] = random.choice(self._choices[base_category])
+            elif part['default']:
+              var_values[var_name] = part['default']
+            else:
+              # Use base category for DEFAULT_CATEGORY lookup (for suffix support)
+              if base_category in self._DEFAULT_CATEGORY:
+                var_values[var_name] = random.choice(self._DEFAULT_CATEGORY[base_category])
           # Otherwise, skip this variable (don't include in result)
 
     return var_values
